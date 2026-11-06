@@ -1,19 +1,30 @@
 <script setup lang="ts">
-import { DEFAULT_CONFIG } from '@game/index'
+import { computed, shallowRef } from 'vue'
+import { DEFAULT_CONFIG, generateWorld } from '@game/index'
+import { initialSeed, randomSeed } from '../seed'
+import WorldCanvas from './WorldCanvas.vue'
 
 defineEmits<{ quit: [] }>()
 
 const config = DEFAULT_CONFIG
+const seed = shallowRef<number | string>(initialSeed())
+const world = computed(() =>
+  generateWorld(seed.value, { width: config.mapWidth, height: config.mapHeight }),
+)
+
+function newMap(): void {
+  seed.value = randomSeed()
+}
 </script>
 
 <template>
   <div class="shell" data-testid="game-shell">
     <header class="hud">
       <span>Level 1</span>
-      <span>Map {{ config.mapWidth }} × {{ config.mapHeight }}</span>
-      <button type="button" @click="$emit('quit')">Back</button>
+      <span data-testid="seed">Seed {{ world.seed }}</span>
+      <button type="button" data-testid="new-map" @click="newMap">New map</button>
+      <button type="button" class="back" @click="$emit('quit')">Back</button>
     </header>
-    <!-- The Canvas 2D world renderer is added in #3. -->
-    <canvas class="world" aria-label="Game world" />
+    <WorldCanvas :world="world" />
   </div>
 </template>

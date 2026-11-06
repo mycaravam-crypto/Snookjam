@@ -63,7 +63,7 @@ body,
   background: var(--panel);
 }
 
-.hud button {
+.hud .back {
   margin-left: auto;
 }
 
