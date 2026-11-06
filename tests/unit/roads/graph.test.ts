@@ -200,6 +200,22 @@ describe('crossing junction construction (#29)', () => {
     expect(result.nodes).toHaveLength(7)
   })
 
+  it('reuses a freehand bend as a junction when the crossing lands exactly on that bend', () => {
+    const g = RoadGraph.fromLayout({ nodes: [
+      { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
+      { id: 2, x: 4, y: -4 }, { id: 3, x: 4, y: 4 },
+    ], segments: [{ from: 0, to: 1 }] })
+    const result = g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 }, {}, [
+      { x: 4, y: 0 },
+    ])
+    expect(result.splits).toHaveLength(1)
+    expect(result.nodes).toHaveLength(3)
+    const junction = result.nodes[1]!
+    expect(g.getNode(junction)?.position).toEqual({ x: 4, y: 0 })
+    expect(g.edgesAt(junction)).toHaveLength(4)
+    expect(g.nodeCount).toBe(5)
+  })
+
   it('does not mutate the live graph when the planned connection fails', () => {
     const g = RoadGraph.fromLayout({ nodes: [
       { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
