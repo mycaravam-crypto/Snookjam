@@ -68,9 +68,9 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
-  vehicleMix: Object.freeze({ car: 0.78, van: 0.18, truck: 0.04 }),
-  vansPerLevel: 0.025,
-  trucksPerLevel: 0.015,
+  vehicleMix: Object.freeze({ car: 1, van: 0, truck: 0 }),
+  vansPerLevel: 0.015,
+  trucksPerLevel: 0.008,
 
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
