@@ -26,4 +26,8 @@ export const COLORS = {
   buildValid: '#2fbf4a',
   buildInvalid: '#e0402f',
   buildOutline: '#ffffff',
+  vehicleOutline: '#1d1d1b',
+  vehicleWaiting: '#f0a020',
+  vehicleStuck: '#e0402f',
+  vehicleGlass: '#bfe3ff',
 }
