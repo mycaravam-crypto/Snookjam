@@ -11,6 +11,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   checkConnection,
+  checkPath,
   createRoadGraph,
   findRoute,
   generateWorld,
@@ -57,8 +58,38 @@ function offRoadPoint(world: World): Point {
   throw new Error('no off-road point')
 }
 
+/**
+ * A freehand road (#18) on the level-1 map: an arc between two road points
+ * that validates as a curved, multi-segment road. The drawn ends are offset
+ * half a tile from the road so snapping is exercised.
+ */
+function freehandRoad(world: World): { trace: Point[]; bends: number } {
+  const graph = createRoadGraph(world)
+  const nodes = graph.nodes().map((n) => n.position)
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = 0; j < nodes.length; j++) {
+      const [a, b] = [nodes[i]!, nodes[j]!]
+      const len = Math.hypot(a.x - b.x, a.y - b.y)
+      if (i === j || len < 5 || len > 12) continue
+      for (const bulge of [2, -2, 3, -3]) {
+        const nx = -(b.y - a.y) / len
+        const ny = (b.x - a.x) / len
+        const trace = Array.from({ length: 25 }, (_, k) => {
+          const t = k / 24
+          const off = bulge * Math.sin(Math.PI * t) + (k === 0 || k === 24 ? 0.5 : 0)
+          return { x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off }
+        })
+        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1))
+        if (check.ok && check.path.length >= 4) return { trace, bends: check.path.length - 2 }
+      }
+    }
+  }
+  throw new Error(`no freehand road on seed ${SEED}`)
+}
+
 const world = generateWorld(SEED)
 const road = usefulRoad(world)
+const curve = freehandRoad(world)
 const offRoad = offRoadPoint(world)
 
 /** Page client coordinates of a world point, via the app's own mapping (handles portrait rotation). */
@@ -75,6 +106,36 @@ async function drag(page: Page, from: Point, to: Point) {
   await page.mouse.down()
   for (let i = 1; i <= 10; i++) await page.mouse.move(a.x + ((b.x - a.x) * i) / 10, a.y + ((b.y - a.y) * i) / 10)
   await page.mouse.up()
+}
+
+/** Draws along `trace` with the mouse, or with touch Pointer Events. */
+async function drawPath(page: Page, trace: Point[], pointerType: 'mouse' | 'touch') {
+  const pts = []
+  for (const p of trace) pts.push(await toScreen(page, p))
+  if (pointerType === 'mouse') {
+    await page.mouse.move(pts[0]!.x, pts[0]!.y)
+    await page.mouse.down()
+    for (const p of pts.slice(1)) await page.mouse.move(p.x, p.y)
+    await page.mouse.up()
+    return
+  }
+  await page.locator('canvas.world').evaluate((el, pts) => {
+    const fire = (type: string, p: { x: number; y: number }) =>
+      el.dispatchEvent(
+        new PointerEvent(type, {
+          clientX: p.x,
+          clientY: p.y,
+          pointerId: 11,
+          pointerType: 'touch',
+          isPrimary: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    fire('pointerdown', pts[0]!)
+    for (const p of pts.slice(1)) fire('pointermove', p)
+    fire('pointerup', pts[pts.length - 1]!)
+  }, pts)
 }
 
 /** Runs simulation steps inside the page (fixed 50 ms steps). */
@@ -170,6 +231,19 @@ test.describe('critical player flow', () => {
     }, after.maxEdge)
     expect(used).toBe(true)
   })
+
+  for (const pointerType of ['mouse', 'touch'] as const) {
+    test(`4c. draws a curved freehand road with ${pointerType} (#18)`, async ({ page }) => {
+      await play(page)
+      const before = await graphInfo(page)
+      await drawPath(page, curve.trace, pointerType)
+      await expect(page.getByTestId('build-status')).toContainText('Road built')
+      // One edge per segment (bends + 1) plus one per split road, net of the split ones.
+      expect((await graphInfo(page)).edges).toBeGreaterThanOrEqual(before.edges + curve.bends + 1)
+      const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
+      expect(scroll).toEqual({ y: 0, selection: '' })
+    })
+  }
 
   test('4b. rejects an invalid drag and leaves the graph unchanged', async ({ page }) => {
     await play(page)
