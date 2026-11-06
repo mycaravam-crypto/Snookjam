@@ -167,12 +167,12 @@ describe('generous snapping', () => {
     expect(controller.preview!.endSnap).toBeUndefined()
   })
 
-  it('does not connect outside the configured tolerance', () => {
+  it('allows an open endpoint outside the configured snap tolerance', () => {
     const tight = setup(constructionOptions({ snapDistance: 0.5 }))
     expect(tight.controller.pointerDown({ x: 3, y: 2.6 })).toBe(false)
     const outcome = draw(tight.controller, { x: 3, y: 1.7 }, CURVE, { x: 7.6, y: 4.5 })
-    expect(outcome).toMatchObject({ kind: 'rejected', reason: 'not-connected' })
-    expect(tight.controller.builtRoads).toHaveLength(0)
+    expect(outcome.kind).toBe('committed')
+    expect(tight.controller.builtRoads).toHaveLength(1)
   })
 
   it('rejects invalid tolerance settings', () => {
