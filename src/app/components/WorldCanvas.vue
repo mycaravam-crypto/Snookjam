@@ -4,7 +4,6 @@ import {
   clientToWorld,
   FONT_FAMILY,
   fitViewport,
-  renderBuiltRoads,
   renderConstructionPreview,
   renderVehicles,
   renderWorld,
@@ -93,8 +92,9 @@ function draw(): void {
     const bg = background.getContext('2d')
     if (bg) {
       bg.setTransform(dpr, 0, 0, dpr, 0, 0)
-      renderWorld(bg, props.world, viewport)
-      if (props.construction) renderBuiltRoads(bg, props.construction.builtRoads, viewport)
+      renderWorld(bg, props.world, viewport, {
+        additionalRoads: props.construction?.builtRoads.map((road) => road.points) ?? [],
+      })
     }
     backgroundWorld = props.world
     backgroundKey = key
