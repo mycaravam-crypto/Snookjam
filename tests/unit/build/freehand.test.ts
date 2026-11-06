@@ -15,7 +15,7 @@ import { asciiWorld, LOOP } from './fixtures'
  * LOOP: top road y = 1.5 (x 1.5..10.5), right road x = 9.5, bottom road
  * y = 5.5, pond in tiles (5..6, 3).
  */
-function setup(options = constructionOptions()) {
+function setup(options = constructionOptions({ endSnapDistance: 1.25 })) {
   const world = asciiWorld(LOOP)
   const graph = createRoadGraph(world)
   return { world, graph, controller: new ConstructionController(world, graph, options) }
@@ -129,6 +129,13 @@ describe('generous snapping', () => {
     expect(controller.preview!.from).toEqual({ x: 3, y: 1.5 })
   })
 
+  it('uses a wider default release-end snap radius than start acquisition', () => {
+    const { world, graph } = setup(constructionOptions())
+    const check = checkPath(world, graph, { x: 3, y: 1.5 }, { x: 8, y: 3.5 }, [])
+    expect(check.ok).toBe(true)
+    if (check.ok) expect(check.to?.position).toEqual({ x: 9.5, y: 3.5 })
+  })
+
   it('snaps both ends onto road segments, not only to junctions', () => {
     const { controller } = setup()
     const outcome = draw(controller, { x: 3.4, y: 2.4 }, CURVE, { x: 7.8, y: 4.6 })
@@ -168,7 +175,7 @@ describe('generous snapping', () => {
   })
 
   it('allows an open endpoint outside the configured snap tolerance', () => {
-    const tight = setup(constructionOptions({ snapDistance: 0.5 }))
+    const tight = setup(constructionOptions({ snapDistance: 0.5, endSnapDistance: 0.5 }))
     expect(tight.controller.pointerDown({ x: 3, y: 2.6 })).toBe(false)
     const outcome = draw(tight.controller, { x: 3, y: 1.7 }, CURVE, { x: 7.6, y: 4.5 })
     expect(outcome.kind).toBe('committed')
@@ -177,6 +184,7 @@ describe('generous snapping', () => {
 
   it('rejects invalid tolerance settings', () => {
     expect(() => constructionOptions({ snapDistance: 0 })).toThrow(RangeError)
+    expect(() => constructionOptions({ endSnapDistance: 0 })).toThrow(RangeError)
     expect(() => constructionOptions({ minSegmentLength: 0 })).toThrow(RangeError)
   })
 })
