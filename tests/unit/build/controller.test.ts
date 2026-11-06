@@ -3,6 +3,7 @@ import {
   clientToWorld,
   ConstructionController,
   createRoadGraph,
+  constructionOptions,
   findRoute,
   fitViewport,
   worldToScreen,
@@ -12,7 +13,7 @@ import { asciiWorld, BOTTOM_LEFT, LOOP, TOP_LEFT } from './fixtures'
 function setup() {
   const world = asciiWorld(LOOP)
   const graph = createRoadGraph(world)
-  return { world, graph, controller: new ConstructionController(world, graph) }
+  return { world, graph, controller: new ConstructionController(world, graph, constructionOptions({ endSnapDistance: 1.25 })) }
 }
 
 describe('ConstructionController', () => {
