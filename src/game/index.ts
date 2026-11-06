@@ -6,4 +6,5 @@
 export * from './config'
 export * from './roads'
 export * from './world'
+export * from './build'
 export * from './render'

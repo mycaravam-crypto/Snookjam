@@ -74,3 +74,37 @@ body,
   display: block;
   touch-action: none;
 }
+
+.hud {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.status {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-align: center;
+  background: #1f2a1be6;
+  color: #ffffff;
+  pointer-events: none;
+}
+
+.world {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}

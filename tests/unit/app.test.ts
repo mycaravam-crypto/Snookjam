@@ -30,3 +30,12 @@ describe('game shell world', () => {
     window.history.replaceState(null, '', '/')
   })
 })
+
+describe('road construction UI', () => {
+  it('shows build instructions and a built-road counter', async () => {
+    const wrapper = mount(App)
+    await wrapper.find('[data-testid="play"]').trigger('click')
+    expect(wrapper.find('[data-testid="build-status"]').text()).toContain('Drag from a road')
+    expect(wrapper.find('[data-testid="built"]').text()).toBe('Roads built 0')
+  })
+})

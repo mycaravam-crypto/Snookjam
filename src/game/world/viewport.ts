@@ -39,3 +39,17 @@ export function worldToScreen(v: Viewport, p: Point): Point {
 export function screenToWorld(v: Viewport, p: Point): Point {
   return { x: (p.x - v.offsetX) / v.scale, y: (p.y - v.offsetY) / v.scale }
 }
+
+/**
+ * Converts a pointer position in page client coordinates to world
+ * coordinates, given the canvas's bounding rectangle in CSS pixels.
+ * Works for any canvas size because the viewport is in CSS pixels too.
+ */
+export function clientToWorld(
+  v: Viewport,
+  rect: { readonly left: number; readonly top: number },
+  clientX: number,
+  clientY: number,
+): Point {
+  return screenToWorld(v, { x: clientX - rect.left, y: clientY - rect.top })
+}

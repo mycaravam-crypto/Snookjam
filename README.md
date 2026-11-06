@@ -41,6 +41,7 @@ src/
     config.ts    MVP tuning defaults
     roads/       Road graph and shortest-time routing
     world/       World model, seeded generation, viewport (world↔screen) maths
+    build/       Road construction: validation and the drag-to-build controller
     render/      Canvas 2D drawing through an injected context
 tests/
   unit/          Vitest tests for UI and game logic
@@ -49,6 +50,20 @@ tests/
 The `@app/*` and `@game/*` import aliases point at `src/app` and `src/game`.
 A test in `tests/unit/architecture.test.ts` fails if game logic imports Vue
 or the app layer.
+
+## Controls
+
+- **Build a road:** press on an existing road, drag to another road, release.
+  Works with mouse, touch and stylus (Pointer Events). Endpoints snap to the
+  nearest road within ¾ of a tile, and to a junction within ½ a tile.
+- While dragging, the preview is **solid green** with a round end when the
+  road can be built, and **dashed red** with a cross when it cannot. The status
+  line at the bottom says why (e.g. "Roads cannot cross water").
+- A road is rejected if it does not start and end on the network, is shorter
+  than one tile, duplicates or runs along an existing road, crosses water or
+  leaves the map, or crosses another road anywhere except at its ends.
+- New roads join the road graph immediately (splitting the roads they attach
+  to), so later route queries can use them.
 
 ## World and maps
 
