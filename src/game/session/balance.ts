@@ -2,7 +2,7 @@
  * Tunable balance values for congestion and level progression (#7).
  * Keep every gameplay coefficient here rather than in simulation code.
  */
-import { DEFAULT_CONFIG } from '../config'
+import { DEFAULT_CONFIG } from '../config'\nimport type { VehicleMix } from '../sim/traffic'
 
 export interface BalanceConfig {
   // Level progression
@@ -101,6 +101,14 @@ export function spawnIntervalAt(balance: BalanceConfig, level: number, elapsedSe
   const progress = Math.min(1, Math.max(0, elapsedSec / balance.levelDurationSec))
   const interval = start * (1 - (1 - balance.inLevelRampFactor) * progress)
   return Math.max(balance.minSpawnIntervalSec, interval)
+}
+
+/** Normalized class mix for a level; heavier traffic grows at a controlled rate. */
+export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix {
+  const van = Math.min(0.45, balance.vehicleMix.van + balance.vansPerLevel * Math.max(0, level - 1))
+  const truck = Math.min(0.3, balance.vehicleMix.truck + balance.trucksPerLevel * Math.max(0, level - 1))
+  const car = Math.max(0, 1 - van - truck)
+  return { car, van, truck }
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
