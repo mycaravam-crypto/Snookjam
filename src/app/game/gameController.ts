@@ -36,7 +36,7 @@ export function createGameController(seed: number | string): GameController {
   let unsubscribe = bind(session.value)
 
   function makeConstruction(s: GameSession): ConstructionController {
-    return new ConstructionController(s.world, s.graph, undefined, (from, to) => s.connectRoad(from, to))
+    return new ConstructionController(s.world, s.graph, undefined, (from, to, via) => s.connectRoad(from, to, undefined, via))
   }
 
   function bind(s: GameSession): () => void {

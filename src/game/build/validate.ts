@@ -1,8 +1,17 @@
 import { EPSILON, type NearestLocation, type Point, type RoadEdge, type RoadGraph, type RoadLocation } from '../roads/graph'
 import { isPassable, terrainAt, type World } from '../world/types'
 import { roadWidth } from '../sim/lanes'
+import { buildRoadPath, DEFAULT_PATH_OPTIONS, pathLength, pointSegmentDistance, type PathOptions } from './path'
 
-export interface ConstructionOptions {
+/**
+ * Snap tolerance in tiles (#18). Deliberately generous: at the smallest
+ * playable zoom a tile is ~16 CSS px, so 1.25 tiles is ~20 px either side of a
+ * road, about the size of a fingertip contact and well beyond mouse jitter,
+ * while still less than the ~2-tile gap between parallel generated roads.
+ */
+export const DEFAULT_SNAP_DISTANCE = 1.25
+
+export interface ConstructionOptions extends PathOptions {
   /** How far (tiles) from a road a pointer may be and still snap to it. */
   readonly snapDistance: number
   /** Within this distance (tiles) of a node, snap to the node itself. */
@@ -14,16 +23,18 @@ export interface ConstructionOptions {
   /** Half the road width, used when checking terrain under the road. */
   readonly halfWidth: number
   /**
-   * Minimum distance (tiles) between the new road's centre line and any road
-   * it does not join, so the two-lane surfaces never overlap (#22).
+   * Minimum distance (tiles) between the new road's centre line (segments
+   * and freehand bends) and any road it does not join, so two-lane road
+   * surfaces never overlap (#22).
    */
   readonly clearance: number
-  /** Minimum angle (radians) between the new road and a road it joins. */
+  /** Minimum angle (radians) between the new road and a road it joins (#22). */
   readonly minJoinAngle: number
 }
 
 export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
-  snapDistance: 0.75,
+  ...DEFAULT_PATH_OPTIONS,
+  snapDistance: DEFAULT_SNAP_DISTANCE,
   nodeSnap: 0.5,
   minLength: 1,
   maxLength: Infinity,
@@ -31,6 +42,18 @@ export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   clearance: roadWidth(),
   minJoinAngle: Math.PI / 3,
 })
+
+/** Defaults with selected overrides, e.g. a larger snap distance for touch. */
+export function constructionOptions(overrides: Partial<ConstructionOptions> = {}): ConstructionOptions {
+  const options = { ...DEFAULT_CONSTRUCTION_OPTIONS, ...overrides }
+  if (!(options.snapDistance > 0) || !Number.isFinite(options.snapDistance)) {
+    throw new RangeError('snapDistance must be a positive number')
+  }
+  if (options.nodeSnap < 0 || !(options.minSegmentLength > 0) || options.sampleSpacing < 0 || !(options.resampleSpacing > 0)) {
+    throw new RangeError('invalid construction options')
+  }
+  return Object.freeze(options)
+}
 
 export type RejectionReason =
   | 'not-on-road'
@@ -43,6 +66,8 @@ export type RejectionReason =
   | 'crosses-road'
   | 'too-close'
   | 'too-sharp'
+  | 'self-crossing'
+  | 'build-failed'
 
 /** Player-facing explanation for each rejection. */
 export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
@@ -54,8 +79,10 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   duplicate: 'There is already a road here',
   obstacle: 'Roads cannot cross water',
   'crosses-road': 'Roads may only meet at their ends',
-  'too-close': 'Too close to another road',
+  'too-close': 'Keep new roads clear of existing ones',
   'too-sharp': 'Roads must meet at a wider angle',
+  'self-crossing': 'A road cannot cross itself',
+  'build-failed': 'Roads cannot be built right now',
 }
 
 export type ConnectionCheck =
@@ -69,6 +96,16 @@ export type ConnectionCheck =
       readonly to?: NearestLocation
     }
 
+/** A connection check for a freehand path, with the road geometry it would build. */
+export type PathCheck = ConnectionCheck & {
+  /**
+   * Smoothed road polyline from the snapped start to the snapped end (or to
+   * the raw pointer when the end is not on a road). Empty when the start is
+   * not on a road.
+   */
+  readonly path: readonly Point[]
+}
+
 /** Snaps a world point to the road network, or undefined if too far away. */
 export function snapToRoad(
   graph: RoadGraph,
@@ -79,8 +116,8 @@ export function snapToRoad(
 }
 
 /**
- * Validates a road from `start` to `end` (world points, unsnapped). Both ends
- * must snap to the existing network; the straight road between the snapped
+ * Validates a straight road from `start` to `end` (world points, unsnapped).
+ * Both ends must snap to the existing network; the road between the snapped
  * positions must stay on the map, avoid impassable terrain, not cross other
  * roads except at its ends, and not duplicate an existing road.
  * Never mutates the graph.
@@ -92,33 +129,126 @@ export function checkConnection(
   end: Point,
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
 ): ConnectionCheck {
+  const { path: _path, ...check } = checkPath(world, graph, start, end, [], options)
+  return check as ConnectionCheck
+}
+
+/**
+ * Validates a freehand road (#18). `samples` is the captured pointer
+ * trajectory between `start` and `end`; it is smoothed and simplified into a
+ * polyline whose ends are snapped to the network. Every segment is checked
+ * against terrain and existing roads, bends must keep `clearance` from other
+ * roads, and the road may not cross itself. Never mutates the graph.
+ */
+export function checkPath(
+  world: World,
+  graph: RoadGraph,
+  start: Point,
+  end: Point,
+  samples: readonly Point[],
+  options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
+): PathCheck {
   const from = snapToRoad(graph, start, options)
-  if (!from) return { ok: false, reason: 'not-on-road' }
+  if (!from) return { ok: false, reason: 'not-on-road', path: [] }
   const to = snapToRoad(graph, end, options)
-  if (!to) return { ok: false, reason: 'not-connected', from }
+  const path = buildRoadPath(from.position, to?.position ?? end, samples, options)
+  if (!to) return { ok: false, reason: 'not-connected', from, path }
+  const fail = (reason: RejectionReason): PathCheck => ({ ok: false, reason, from, to, path })
 
-  const a = from.position
-  const b = to.position
-  const length = Math.hypot(b.x - a.x, b.y - a.y)
-  if (length < options.minLength) return { ok: false, reason: 'too-short', from, to }
-  if (length > options.maxLength) return { ok: false, reason: 'too-long', from, to }
+  const length = pathLength(path)
+  if (length < options.minLength) return fail('too-short')
+  if (length > options.maxLength) return fail('too-long')
 
-  const graphCheck = graph.canConnect(from.location, to.location)
-  if (!graphCheck.ok) {
-    const reason = graphCheck.reason === 'zero-length' ? 'too-short' : 'duplicate'
-    return { ok: false, reason, from, to }
+  const via = path.slice(1, -1)
+  const graphCheck = graph.canConnect(from.location, to.location, via)
+  if (!graphCheck.ok) return fail(graphCheck.reason === 'zero-length' ? 'too-short' : 'duplicate')
+
+  for (let i = 1; i < path.length; i++) {
+    const terrain = checkTerrain(world, path[i - 1]!, path[i]!, options.halfWidth)
+    if (terrain) return fail(terrain)
   }
 
-  const terrain = checkTerrain(world, a, b, options.halfWidth)
-  if (terrain) return { ok: false, reason: terrain, from, to }
+  const selfCrossing = checkSelfCrossing(path)
+  if (selfCrossing) return fail(selfCrossing)
 
-  const roads = checkRoadCrossings(graph, from.location, to.location, a, b)
-  if (roads) return { ok: false, reason: roads, from, to }
+  const roads = checkPathCrossings(graph, from.location, to.location, path, options.clearance)
+  if (roads) return fail(roads)
 
-  const spacing = checkRoadSpacing(graph, from.location, to.location, a, b, options)
-  if (spacing) return { ok: false, reason: spacing, from, to }
+  const spacing = checkRoadSpacing(graph, from.location, to.location, path, options)
+  if (spacing) return fail(spacing)
 
-  return { ok: true, from, to }
+  return { ok: true, from, to, path }
+}
+
+/**
+ * Rejects a polyline whose non-adjacent segments touch, or which doubles back
+ * on itself between adjacent segments.
+ */
+export function checkSelfCrossing(path: readonly Point[]): 'self-crossing' | undefined {
+  for (let i = 1; i < path.length - 1; i++) {
+    const a = path[i - 1]!
+    const b = path[i]!
+    const c = path[i + 1]!
+    const ux = b.x - a.x
+    const uy = b.y - a.y
+    const vx = c.x - b.x
+    const vy = c.y - b.y
+    const dot = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))
+    if (dot < -0.999) return 'self-crossing'
+  }
+  for (let i = 1; i < path.length; i++) {
+    for (let j = i + 2; j < path.length; j++) {
+      const a = path[i - 1]!
+      const b = path[i]!
+      const p = path[j - 1]!
+      const q = path[j]!
+      if (segmentsIntersect(a, b, p, q) || segmentsIntersect(p, q, a, b)) return 'self-crossing'
+    }
+  }
+  return undefined
+}
+
+/**
+ * Checks each segment of `path` against the existing network. The first
+ * segment may meet the roads at `from`, the last those at `to`; no segment may
+ * otherwise cross a road, and interior bends must keep `clearance` from all
+ * roads.
+ */
+export function checkPathCrossings(
+  graph: RoadGraph,
+  from: RoadLocation,
+  to: RoadLocation,
+  path: readonly Point[],
+  clearance: number,
+): 'crosses-road' | 'duplicate' | 'too-close' | undefined {
+  const last = path.length - 1
+  for (let i = 1; i <= last; i++) {
+    const a = path[i - 1]!
+    const b = path[i]!
+    if (path.length === 2) return checkRoadCrossings(graph, from, to, a, b)
+    const touching = new Set<number>([...(i === 1 ? edgesAt(graph, from) : []), ...(i === last ? edgesAt(graph, to) : [])])
+    for (const edge of graph.edges()) {
+      const p = graph.getNode(edge.a)!.position
+      const q = graph.getNode(edge.b)!.position
+      if (touching.has(edge.id)) {
+        if (overlaps(a, b, p, q)) return 'duplicate'
+        // The segment's far end is a bend, which must not sit on this road.
+        const bend = i === 1 ? b : a
+        if (pointSegmentDistance(bend, p, q) < EPSILON) return 'crosses-road'
+        continue
+      }
+      if (segmentsIntersect(a, b, p, q) || segmentsIntersect(p, q, a, b)) return 'crosses-road'
+    }
+  }
+  for (let i = 1; i < last; i++) {
+    const bend = path[i]!
+    for (const edge of graph.edges()) {
+      const p = graph.getNode(edge.a)!.position
+      const q = graph.getNode(edge.b)!.position
+      if (pointSegmentDistance(bend, p, q) < clearance) return 'too-close'
+    }
+  }
+  return undefined
 }
 
 /**
@@ -223,28 +353,32 @@ function overlaps(a: Point, b: Point, p: Point, q: Point): boolean {
 }
 
 /**
- * Two-lane roads need room (#22): the new road must meet the roads it joins
- * at a reasonable angle, and stay at least `clearance` away from every other
- * road, so lanes of different roads never overlap.
+ * Two-lane roads need room (#22). The new road's first and last segments
+ * must meet the roads they join at `minJoinAngle` or more, and every segment
+ * must stay at least `clearance` from roads it does not join. Near its own
+ * ends (within `clearance` along the path) a segment may of course approach
+ * the roads it joins there; consecutive segments of the new road are never
+ * checked against each other.
  */
 export function checkRoadSpacing(
   graph: RoadGraph,
   from: RoadLocation,
   to: RoadLocation,
-  a: Point,
-  b: Point,
+  path: readonly Point[],
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
 ): 'too-close' | 'too-sharp' | undefined {
-  const joined = new Set<number>()
-  for (const [location, at, other] of [
-    [from, a, b],
-    [to, b, a],
+  if (path.length < 2) return undefined
+  const last = path.length - 1
+  const startEdges = edgesAt(graph, from)
+  const endEdges = edgesAt(graph, to)
+
+  for (const [edges, at, next] of [
+    [startEdges, path[0]!, path[1]!],
+    [endEdges, path[last]!, path[last - 1]!],
   ] as const) {
-    const out = unit(at, other)
-    for (const edge of edgesAt(graph, location)) {
-      joined.add(edge)
-      // Directions along the joined road, away from the junction point.
-      const e = graph.getEdge(edge)!
+    const out = unit(at, next)
+    for (const id of edges) {
+      const e = graph.getEdge(id)!
       for (const end of [e.a, e.b]) {
         const p = graph.getNode(end)!.position
         if (Math.hypot(p.x - at.x, p.y - at.y) < EPSILON) continue
@@ -254,11 +388,25 @@ export function checkRoadSpacing(
       }
     }
   }
-  for (const edge of graph.edges()) {
-    if (joined.has(edge.id)) continue
-    const p = graph.getNode(edge.a)!.position
-    const q = graph.getNode(edge.b)!.position
-    if (segmentDistance(a, b, p, q) < options.clearance - 1e-9) return 'too-close'
+
+  // Path distance from the start to each vertex, to know which segments are
+  // still close to the joins at either end.
+  const along = [0]
+  for (let i = 1; i <= last; i++) along.push(along[i - 1]! + Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.y - path[i - 1]!.y))
+  const total = along[last]!
+  for (let i = 1; i <= last; i++) {
+    const a = path[i - 1]!
+    const b = path[i]!
+    const skip = new Set<number>([
+      ...(along[i - 1]! < options.clearance ? startEdges : []),
+      ...(total - along[i]! < options.clearance ? endEdges : []),
+    ])
+    for (const edge of graph.edges()) {
+      if (skip.has(edge.id)) continue
+      const p = graph.getNode(edge.a)!.position
+      const q = graph.getNode(edge.b)!.position
+      if (segmentDistance(a, b, p, q) < options.clearance - 1e-9) return 'too-close'
+    }
   }
   return undefined
 }
@@ -266,14 +414,6 @@ export function checkRoadSpacing(
 function unit(from: Point, to: Point): Point {
   const len = Math.hypot(to.x - from.x, to.y - from.y) || 1
   return { x: (to.x - from.x) / len, y: (to.y - from.y) / len }
-}
-
-function pointSegmentDistance(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const len2 = dx * dx + dy * dy
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
-  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
 }
 
 /** Shortest distance between two segments (0 if they intersect). */

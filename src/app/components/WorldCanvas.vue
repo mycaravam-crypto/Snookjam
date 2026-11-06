@@ -111,7 +111,7 @@ function scheduleDraw(): void {
   if (!frame) draw()
 }
 
-function toWorld(e: PointerEvent): Point | undefined {
+function toWorld(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Point | undefined {
   const el = canvas.value
   if (!el || !viewport) return undefined
   return clientToWorld(viewport, el.getBoundingClientRect(), e.clientX, e.clientY)
@@ -133,7 +133,9 @@ function onPointerMove(e: PointerEvent): void {
   if (!c || !point) return
   if (activePointer === e.pointerId) {
     e.preventDefault()
-    c.pointerMove(point)
+    // Coalesced events carry the full trajectory between frames (#18).
+    const trace = (e.getCoalescedEvents?.() ?? []).map(toWorld).filter((p): p is Point => p !== undefined)
+    c.pointerMove(trace.length > 0 ? trace : point)
   } else if (e.pointerType === 'mouse' && canvas.value && props.interactive) {
     // Hint that a drag can start here.
     canvas.value.style.cursor = snapToRoad(c.graph, point, c.options) ? 'crosshair' : 'default'
@@ -146,8 +148,8 @@ function onPointerUp(e: PointerEvent): void {
   activePointer = undefined
   const point = toWorld(e)
   const outcome = point ? c.pointerUp(point) : (c.cancel(), { kind: 'none' as const })
-  if (outcome.kind === 'committed') showFeedback({ kind: 'committed', from: outcome.road.from, to: outcome.road.to })
-  else if (outcome.kind === 'rejected') showFeedback({ kind: 'rejected', from: outcome.from, to: outcome.to })
+  if (outcome.kind === 'committed') showFeedback({ kind: 'committed', from: outcome.road.from, to: outcome.road.to, points: outcome.road.points })
+  else if (outcome.kind === 'rejected') showFeedback({ kind: 'rejected', from: outcome.from, to: outcome.to, points: outcome.path })
   emit('outcome', outcome)
 }
 
@@ -211,7 +213,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="`Map of seed ${world.seed}. Drag from a road to another road to build a connection.`"
+    :aria-label="`Map of seed ${world.seed}. Draw from a road to another road to build a connection.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

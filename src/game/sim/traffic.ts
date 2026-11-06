@@ -390,20 +390,18 @@ export class TrafficSim {
    * removed edge is replaced by its two halves in every planned route.
    */
   applySplit(split: EdgeSplit): void {
-    const towardA = this.graph.getEdge(split.towardA)
-    const towardB = this.graph.getEdge(split.towardB)
-    if (!towardA || !towardB) throw new Error('split edges are not in the graph')
-    const a = this.graph.otherEnd(towardA, split.node)
-    const b = this.graph.otherEnd(towardB, split.node)
+    // Uses only the split record, not the graph: when several splits are
+    // replayed in order, a later one may already have retired these halves.
+    const { a, b, towardA, towardB, towardALength, towardBLength } = split
     const expand = (step: RouteStep): RouteStep[] =>
       step.from === a
         ? [
-            { edge: towardA.id, from: a, to: split.node },
-            { edge: towardB.id, from: split.node, to: b },
+            { edge: towardA, from: a, to: split.node },
+            { edge: towardB, from: split.node, to: b },
           ]
         : [
-            { edge: towardB.id, from: b, to: split.node },
-            { edge: towardA.id, from: split.node, to: a },
+            { edge: towardB, from: b, to: split.node },
+            { edge: towardA, from: split.node, to: a },
           ]
 
     const removedLanes = [`${split.removed}>${a}`, `${split.removed}>${b}`]
@@ -420,7 +418,7 @@ export class TrafficSim {
         }
         const halves = expand(s)
         if (isCurrent) {
-          const firstLength = this.graph.getEdge(halves[0]!.edge)!.length
+          const firstLength = s.from === a ? towardALength : towardBLength
           const onSecond = v.progress > firstLength
           stepIndex = steps.length + (onSecond ? 1 : 0)
           progress = onSecond ? v.progress - firstLength : v.progress

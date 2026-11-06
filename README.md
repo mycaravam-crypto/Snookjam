@@ -28,8 +28,9 @@ npm run dev     # start the Vite dev server at http://localhost:5173
 | `npm run build`      | Type-check, then production build into `dist/`  |
 | `npm run preview`    | Serve the production build locally              |
 | `npm run typecheck`  | Type-check TypeScript and Vue files (`vue-tsc`) |
-| `npm test`           | Run the unit tests once (Vitest + jsdom)        |
+| `npm test`           | Unit and integration tests once (Vitest + jsdom) |
 | `npm run test:watch` | Run the tests in watch mode                     |
+| `npm run test:e2e`   | Browser tests against the production build (Playwright, Chromium) |
 
 ## Project structure
 
@@ -46,7 +47,8 @@ src/
     sim/         Traffic simulation and fixed-step clock
     session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
-    build/       Road construction: validation and the drag-to-build controller
+    build/       Road construction: freehand path geometry, validation and the
+                 drag-to-build controller
     render/      Canvas 2D drawing through an injected context
 tests/
   unit/          Vitest tests for UI and game logic
@@ -70,18 +72,28 @@ or the app layer.
   pointer input is converted back to world coordinates.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
-- **Build a road:** press on an existing road, drag to another road, release.
-  Works with mouse, touch and stylus (Pointer Events). Endpoints snap to the
-  nearest road within ¾ of a tile, and to a junction within ½ a tile.
+- **Build a road:** press on an existing road, draw the road along any path
+  (around a lake, say) and release on or near another road. Works with mouse,
+  touch and stylus (Pointer Events).
+- **Snapping is generous:** both ends snap to the nearest point *along* a road
+  within 1¼ tiles (`DEFAULT_SNAP_DISTANCE`, configurable through
+  `constructionOptions({ snapDistance })`), and to a junction or road end
+  within ½ a tile. While the end is in range, a ring marks where the road will
+  attach: a square for a junction, a circle for a point along a road.
+- The drawn trajectory is resampled, smoothed to remove jitter and simplified
+  into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
+  graph node.
 - While dragging, the preview is **solid green** with a round end when the
   road can be built, and **dashed red** with a cross when it cannot. The status
   line at the bottom says why (e.g. "Roads cannot cross water").
 - A road is rejected if it does not start and end on the network, is shorter
   than one tile, duplicates or runs along an existing road, crosses water or
-  leaves the map, crosses another road anywhere except at its ends, passes
-  closer than one road width to another road, or meets a road at less than 60°.
-- New roads join the road graph immediately (splitting the roads they attach
-  to), so later route queries can use them.
+  leaves the map, crosses another road anywhere except at its ends, crosses
+  itself, passes closer than one road width to a road it does not join, or
+  meets a road at less than 60° (two-lane roads need room, #22).
+- New roads join the road graph immediately and atomically (a rejected road
+  changes nothing), splitting the roads they attach to, so later route
+  queries can use them. Vehicles re-plan at their next junction.
 
 ## Roads and traffic
 
@@ -172,6 +184,46 @@ that within a level, starts 25 % lower each level, and never drops below
 `DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
 without player roads: levels 1–2 stay below about 5 % congestion, level 3
 peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
+
+## Testing
+
+- **Unit tests** (`tests/unit`) cover each module: world generation,
+  road graph and routing, traffic, construction, congestion and lifecycle.
+- **Integration tests** (`tests/integration`) run the whole game logic
+  together with fixed seeds and fixed 50 ms steps, with no wall-clock timing.
+  The core scenario uses seed 9, level 3. Without player roads the level is
+  lost (congestion reaches 100 % at 164 s). A single road from (8.5, 4.5) to
+  (1.5, 8.5), built 12 s in, completes the level with congestion peaking
+  around 76 %, and more vehicles leave the map. If generation, traffic rules
+  or balance change, find a new relieving road by trying every valid single
+  road on a map that is lost without help.
+- **Browser tests** (`tests/e2e`) start the production build with
+  `vite preview` and drive Chromium through Playwright along the critical
+  flow: start screen → Play → map and moving vehicles → congestion rises
+  while roads are blocked and falls when they reopen → drag to build a road,
+  which the graph accepts and rerouted traffic uses → invalid drag rejected
+  without page scroll or selection → pause/resume (button and `P` key) →
+  game over → restart with no leftover roads, time or congestion → level
+  complete → next level. `?test` exposes the game controller as
+  `window.__snookjam`. Tests use it to read state and to fast-forward the
+  simulation in fixed steps; every player action goes through the real UI.
+  Install the browser once with `npx playwright install chromium`. CI runs
+  these tests in a separate `e2e` job.
+
+**Performance** (Node 22 / headless Chromium in a 4-core Linux container):
+
+- Simulation: with 94–100 active vehicles on a 40 × 30 map, one 50 ms step
+  takes about 0.05 ms (integration test).
+- Rendering: with about 90 active vehicles on a 1280 × 720 viewport, the game
+  runs at 60 fps (mean frame 16.6 ms, p95 16.8 ms; browser test).
+
+**Known limitations.**
+
+- Only Chromium is tested; touch input is covered by unit tests of the
+  pointer handling, not by a real touch device.
+- The browser tests use the test hook to create a jam and to reach game over
+  or level completion quickly. Losing by organic traffic and saving a level by
+  building a road are proven deterministically in the integration tests.
 
 ## Tech stack
 

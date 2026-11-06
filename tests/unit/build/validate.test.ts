@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkConnection, checkTerrain, DEFAULT_CONSTRUCTION_OPTIONS, createRoadGraph, findRoute, segmentsIntersect } from '@game/index'
+import { checkConnection, constructionOptions, checkTerrain, createRoadGraph, findRoute, segmentsIntersect } from '@game/index'
 import { asciiWorld, BOTTOM_LEFT, LOOP, TOP_LEFT } from './fixtures'
 
 function setup() {
@@ -81,7 +81,7 @@ describe('checkConnection', () => {
 
   it('rejects a road longer than the configured maximum', () => {
     const { world, graph } = setup()
-    const options = { ...DEFAULT_CONSTRUCTION_OPTIONS, maxLength: 3 }
+    const options = constructionOptions({ maxLength: 3 })
     expect(checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 5.5 }, options)).toMatchObject({
       reason: 'too-long',
     })
