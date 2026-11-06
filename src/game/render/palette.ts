@@ -1,36 +1,57 @@
 import type { Terrain } from '../world/types'
 
 export const TERRAIN_COLORS: Record<Terrain, string> = {
-  grass: '#9cc46b',
-  field: '#d9c46a',
-  forest: '#4f8a3c',
-  water: '#5aa0d6',
-  settlement: '#c9b79c',
+  grass: '#8fca5c',
+  field: '#e3c860',
+  forest: '#5c9e3f',
+  water: '#4fa3e0',
+  settlement: '#cdbb9a',
 }
+
+/** Crop colours; each field tile picks one so farmland looks patchworked. */
+export const FIELD_COLORS = ['#e3c860', '#dbbd55', '#d6d06a', '#e6bf5e'] as const
+
+/** Roof colours for houses, picked per house. */
+export const ROOF_COLORS = ['#c8553d', '#a8432f', '#6c7a89', '#8b5a3c'] as const
 
 /** Font stack for canvas text; matches the UI's display font, with a system fallback. */
 export const FONT_FAMILY = "Fredoka, system-ui, sans-serif"
 
 export const COLORS = {
-  background: '#2d3a26',
-  fieldFurrow: '#c2ab52',
-  tree: '#2f6b2a',
-  treeHighlight: '#5f9e48',
-  waterRipple: '#7db8e3',
-  house: '#b5533c',
-  houseRoof: '#7d3426',
-  roadEdge: '#4a4a46',
-  road: '#77776f',
-  roadMarking: '#e8e3c8',
-  tunnel: '#1d1d1b',
-  tunnelArch: '#8a8577',
-  label: '#1f2a1b',
-  labelHalo: '#ffffffcc',
+  background: '#14210f',
+  mapShadow: '#00000080',
+  mapFrame: '#0b1408',
+  shadow: '#00000033',
+  fieldFurrow: '#00000014',
+  grassTuft: '#6fae43',
+  flower: ['#ffffff', '#ffd84a', '#ff8ad8'],
+  tree: '#2f7a2c',
+  treeDark: '#24602a',
+  treeHighlight: '#7cc04f',
+  waterRipple: '#ffffff40',
+  waterShore: '#ffffff59',
+  waterDeep: '#3a8ccc',
+  house: '#f3e6cc',
+  houseShade: '#d9c7a3',
+  roofRidge: '#ffffff4d',
+  roadShadow: '#00000040',
+  roadEdge: '#3c3f3a',
+  road: '#6b6e68',
+  roadMarking: '#f4efd2',
+  tunnel: '#141412',
+  tunnelInner: '#2a2925',
+  tunnelArch: '#9a937f',
+  tunnelArchLight: '#c4bca4',
+  label: '#ffffff',
+  labelHalo: '#1f2a1b',
   buildValid: '#2fbf4a',
   buildInvalid: '#e0402f',
   buildOutline: '#ffffff',
   vehicleOutline: '#1d1d1b',
+  vehicleShadow: '#00000055',
+  vehicleRoof: '#00000030',
   vehicleWaiting: '#f0a020',
   vehicleStuck: '#e0402f',
   vehicleGlass: '#bfe3ff',
+  vehicleLight: '#fff6c2',
 }

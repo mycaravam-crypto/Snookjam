@@ -36,6 +36,9 @@ export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport
   ctx.restore()
 }
 
+/** Drop-shadow offset in screen pixels (down-right, matching the map). */
+const SHADOW = 1.5
+
 function drawCar(
   ctx: VehicleContext,
   vehicle: Vehicle,
@@ -45,25 +48,49 @@ function drawCar(
   length: number,
   width: number,
 ): void {
+  const hl = length / 2
+  const hw = width / 2
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(heading)
+  // Shadow: a fixed screen offset expressed in the car's rotated frame.
+  const sx = SHADOW * (Math.cos(heading) + Math.sin(heading))
+  const sy = SHADOW * (Math.cos(heading) - Math.sin(heading))
+  ctx.fillStyle = COLORS.vehicleShadow
+  ctx.fillRect(-hl + sx, -hw + sy, length, width)
   // The state outline is drawn inside the footprint so cars never look wider
   // than the lane allows.
   const o = Math.max(1, width * 0.18)
   ctx.fillStyle = STATE_OUTLINE[vehicle.state]
-  ctx.fillRect(-length / 2, -width / 2, length, width)
+  ctx.fillRect(-hl, -hw, length, width)
   ctx.fillStyle = BODY_COLORS[vehicle.id % BODY_COLORS.length]!
-  ctx.fillRect(-length / 2 + o, -width / 2 + o, length - 2 * o, width - 2 * o)
-  // Windscreen marks the front.
+  ctx.fillRect(-hl + o, -hw + o, length - 2 * o, width - 2 * o)
+  // Cabin roof, windscreen (front) and rear window.
+  ctx.fillStyle = COLORS.vehicleRoof
+  ctx.fillRect(-length * 0.22, -hw + o, length * 0.36, width - 2 * o)
   ctx.fillStyle = COLORS.vehicleGlass
-  ctx.fillRect(length * 0.1, -width / 2 + o, length * 0.16, width - 2 * o)
+  ctx.fillRect(length * 0.1, -hw + o, length * 0.16, width - 2 * o)
+  ctx.fillRect(-length * 0.34, -hw + o, length * 0.1, width - 2 * o)
+  if (length >= 8) {
+    // Headlights.
+    const lw = Math.max(1, width * 0.22)
+    ctx.fillStyle = COLORS.vehicleLight
+    ctx.fillRect(hl - 1, -hw, 1, lw)
+    ctx.fillRect(hl - 1, hw - lw, 1, lw)
+  }
   ctx.restore()
   if (vehicle.state === 'stuck') {
+    // A red badge with "!" above the car.
+    const r = Math.max(6, length * 0.6)
+    const by = y - width - r
     ctx.fillStyle = COLORS.vehicleStuck
-    ctx.font = `700 ${Math.round(Math.max(10, length * 1.2))}px ${FONT_FAMILY}`
+    ctx.beginPath()
+    ctx.arc(x, by, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `700 ${Math.round(r * 1.5)}px ${FONT_FAMILY}`
     ctx.textAlign = 'center'
-    ctx.textBaseline = 'bottom'
-    ctx.fillText('!', x, y - width)
+    ctx.textBaseline = 'middle'
+    ctx.fillText('!', x, by + r * 0.08)
   }
 }
