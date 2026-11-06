@@ -194,7 +194,7 @@ describe('GameSession lifecycle', () => {
     const { s } = session()
     s.start()
     ticks(s, 5)
-    const controller = new ConstructionController(s.world, s.graph, undefined, (a, b, via) => s.connectRoad(a, b, undefined, via))
+    const controller = new ConstructionController(s.world, s.graph, undefined, (a, b, via) => b.kind === 'point' ? s.connectRoadToPoint(a, b.position, undefined, via) : s.connectRoad(a, b, undefined, via))
     // Mid-edge to mid-edge, picking a pair the construction rules accept
     // (two-lane spacing and join angles, #22).
     const mids = s.graph.edges().filter((e) => e.length >= 4).map((e) => s.graph.positionOf({ kind: 'edge', edge: e.id, t: 0.5 }))
