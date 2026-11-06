@@ -298,6 +298,28 @@ export class RoadGraph {
   }
 
   /**
+   * Adds a road from an existing network location to a free endpoint.
+   * The endpoint becomes a real graph node, so it can be extended or joined
+   * by a later construction gesture. All geometry is checked before mutation.
+   */
+  connectToPoint(from: RoadLocation, point: Point, options: EdgeOptions = {}, via: readonly Point[] = []): ConnectResult {
+    if (!this.locationExists(from)) throw new Error('cannot connect: unknown-location')
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error('cannot connect: invalid-path')
+    const startPosition = this.positionOf(from)
+    const points = [startPosition, ...via, point]
+    for (let i = 1; i < points.length; i++) {
+      if (!Number.isFinite(points[i]!.x) || !Number.isFinite(points[i]!.y)) throw new Error('cannot connect: invalid-path')
+      if (distance(points[i - 1]!, points[i]!) < EPSILON) throw new Error('cannot connect: zero-length')
+    }
+    const start = this.ensureNodeAt(from)
+    const end = this.addNode(point)
+    const chain = [start.node, ...via.map((p) => this.addNode(p).id), end.id]
+    const edges: EdgeId[] = []
+    for (let i = 1; i < chain.length; i++) edges.push(this.addEdge(chain[i - 1]!, chain[i]!, options).id)
+    return { edge: edges[0]!, edges, nodes: chain, splits: start.split ? [start.split] : [] }
+  }
+
+  /**
    * Checks graph-level validity of a proposed connection without mutating.
    * With `via` points the road may join two points of the same edge or two
    * already-connected nodes (it takes a different path); it must still have
