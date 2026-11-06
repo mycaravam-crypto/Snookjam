@@ -199,9 +199,10 @@ describe('freehand validation', () => {
     expect(graph.toLayout()).toEqual(before)
   })
 
-  it('rejects a path that crosses another road between its ends', () => {
+  it('still rejects a crossing path when its bends violate road clearance', () => {
     const { world, graph } = setup()
-    // From the top road, out across the right-hand road and back to the bottom road.
+    // This trajectory crosses the right-hand road but also runs too close
+    // to nearby road surfaces at its bends.
     const trace = [
       { x: 7, y: 2.4 },
       { x: 10.5, y: 3 },
@@ -210,7 +211,7 @@ describe('freehand validation', () => {
     ]
     expect(checkPath(world, graph, { x: 7, y: 1.6 }, { x: 8, y: 5.4 }, trace)).toMatchObject({
       ok: false,
-      reason: 'crosses-road',
+      reason: 'too-close',
     })
   })
 

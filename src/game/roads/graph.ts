@@ -283,18 +283,89 @@ export class RoadGraph {
   connect(from: RoadLocation, to: RoadLocation, options: EdgeOptions = {}, via: readonly Point[] = []): ConnectResult {
     const check = this.canConnect(from, to, via)
     if (!check.ok) throw new Error(`cannot connect: ${check.reason}`)
+    const working = this.cloneGraph()
+    const result = working.connectMutable(from, to, options, via)
+    this.copyFrom(working)
+    return result
+  }
+
+  private connectMutable(from: RoadLocation, to: RoadLocation, options: EdgeOptions, via: readonly Point[]): ConnectResult {
     const start = this.ensureNodeAt(from)
-    // `to` may reference the edge that was just split; remap it if so.
     const end = this.ensureNodeAt(remapLocation(this, to, start.split))
-    const chain = [start.node, ...via.map((p) => this.addNode(p).id), end.node]
+    const points = [this.getNode(start.node)!.position, ...via, this.getNode(end.node)!.position]
+    const waypointNodes = [start.node, ...via.map((p) => this.addNode(p).id), end.node]
+    const events: { segment: number; t: number; edge: EdgeId; u: number; node?: NodeId }[] = []
+
+    for (let segment = 0; segment < points.length - 1; segment++) {
+      const a = points[segment]!, b = points[segment + 1]!
+      for (const edge of this.edges()) {
+        const p = this.getNode(edge.a)!.position, q = this.getNode(edge.b)!.position
+        const hit = segmentIntersection(a, b, p, q)
+        if (!hit || hit.t <= 1e-6 || hit.t >= 1 - 1e-6) continue
+        const node = hit.u <= 1e-6 ? edge.a : hit.u >= 1 - 1e-6 ? edge.b : undefined
+        events.push({ segment, t: hit.t, edge: edge.id, u: hit.u, ...(node === undefined ? {} : { node }) })
+      }
+    }
+
+    const splits: EdgeSplit[] = [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined)
+    const byEdge = new Map<EdgeId, typeof events>()
+    for (const event of events) {
+      if (event.node !== undefined) continue
+      const group = byEdge.get(event.edge) ?? []
+      group.push(event)
+      byEdge.set(event.edge, group)
+    }
+    for (const [edgeId, group] of byEdge) {
+      group.sort((a, b) => a.u - b.u || a.segment - b.segment || a.t - b.t)
+      let current = edgeId, previous = 0, previousNode: NodeId | undefined
+      for (const event of group) {
+        if (event.u - previous <= 1e-6) {
+          event.node = previousNode
+          continue
+        }
+        const split = this.ensureNodeAt({ kind: 'edge', edge: current, t: (event.u - previous) / (1 - previous) })
+        event.node = split.node
+        if (split.split) splits.push(split.split)
+        current = split.split!.towardB
+        previous = event.u
+        previousNode = split.node
+      }
+    }
+
+    const chain: NodeId[] = [start.node]
+    for (let segment = 0; segment < points.length - 1; segment++) {
+      const crossings = events.filter((event) => event.segment === segment && event.node !== undefined).sort((a, b) => a.t - b.t)
+      for (const event of crossings) if (chain[chain.length - 1] !== event.node) chain.push(event.node!)
+      const waypoint = waypointNodes[segment + 1]!
+      if (chain[chain.length - 1] !== waypoint) chain.push(waypoint)
+    }
     const edges: EdgeId[] = []
     for (let i = 1; i < chain.length; i++) edges.push(this.addEdge(chain[i - 1]!, chain[i]!, options).id)
-    return {
-      edge: edges[0]!,
-      edges,
-      nodes: chain,
-      splits: [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined),
-    }
+    if (edges.length === 0) throw new Error('cannot connect: zero-length')
+    return { edge: edges[0]!, edges, nodes: chain, splits }
+  }
+
+  private cloneGraph(): RoadGraph {
+    const clone = new RoadGraph()
+    for (const [id, node] of this.nodeMap) clone.nodeMap.set(id, node)
+    for (const [id, edge] of this.edgeMap) clone.edgeMap.set(id, edge)
+    for (const [id, edges] of this.incidence) clone.incidence.set(id, [...edges])
+    clone.nextNodeId = this.nextNodeId
+    clone.nextEdgeId = this.nextEdgeId
+    clone.versionCounter = this.versionCounter
+    return clone
+  }
+
+  private copyFrom(source: RoadGraph): void {
+    this.nodeMap.clear()
+    this.edgeMap.clear()
+    this.incidence.clear()
+    for (const [id, node] of source.nodeMap) this.nodeMap.set(id, node)
+    for (const [id, edge] of source.edgeMap) this.edgeMap.set(id, edge)
+    for (const [id, edges] of source.incidence) this.incidence.set(id, [...edges])
+    this.nextNodeId = source.nextNodeId
+    this.nextEdgeId = source.nextEdgeId
+    this.versionCounter = source.versionCounter
   }
 
   /**
@@ -305,18 +376,64 @@ export class RoadGraph {
   connectToPoint(from: RoadLocation, point: Point, options: EdgeOptions = {}, via: readonly Point[] = []): ConnectResult {
     if (!this.locationExists(from)) throw new Error('cannot connect: unknown-location')
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error('cannot connect: invalid-path')
-    const startPosition = this.positionOf(from)
-    const points = [startPosition, ...via, point]
+    const points = [this.positionOf(from), ...via, point]
     for (let i = 1; i < points.length; i++) {
       if (!Number.isFinite(points[i]!.x) || !Number.isFinite(points[i]!.y)) throw new Error('cannot connect: invalid-path')
       if (distance(points[i - 1]!, points[i]!) < EPSILON) throw new Error('cannot connect: zero-length')
     }
+    const working = this.cloneGraph()
+    const result = working.connectToPointMutable(from, point, options, via)
+    this.copyFrom(working)
+    return result
+  }
+
+  private connectToPointMutable(from: RoadLocation, point: Point, options: EdgeOptions, via: readonly Point[]): ConnectResult {
     const start = this.ensureNodeAt(from)
-    const end = this.addNode(point)
-    const chain = [start.node, ...via.map((p) => this.addNode(p).id), end.id]
+    const points = [this.getNode(start.node)!.position, ...via, point]
+    const waypointNodes = [start.node, ...via.map((p) => this.addNode(p).id), this.addNode(point).id]
+    const events: { segment: number; t: number; edge: EdgeId; u: number; node?: NodeId }[] = []
+    for (let segment = 0; segment < points.length - 1; segment++) {
+      const a = points[segment]!, b = points[segment + 1]!
+      for (const edge of this.edges()) {
+        const p = this.getNode(edge.a)!.position, q = this.getNode(edge.b)!.position
+        const hit = segmentIntersection(a, b, p, q)
+        if (!hit || hit.t <= 1e-6 || hit.t >= 1 - 1e-6) continue
+        const node = hit.u <= 1e-6 ? edge.a : hit.u >= 1 - 1e-6 ? edge.b : undefined
+        events.push({ segment, t: hit.t, edge: edge.id, u: hit.u, ...(node === undefined ? {} : { node }) })
+      }
+    }
+    const splits: EdgeSplit[] = start.split ? [start.split] : []
+    const byEdge = new Map<EdgeId, typeof events>()
+    for (const event of events) {
+      if (event.node !== undefined) continue
+      const group = byEdge.get(event.edge) ?? []
+      group.push(event)
+      byEdge.set(event.edge, group)
+    }
+    for (const [edgeId, group] of byEdge) {
+      group.sort((a, b) => a.u - b.u || a.segment - b.segment || a.t - b.t)
+      let current = edgeId, previous = 0, previousNode: NodeId | undefined
+      for (const event of group) {
+        if (event.u - previous <= 1e-6) { event.node = previousNode; continue }
+        const split = this.ensureNodeAt({ kind: 'edge', edge: current, t: (event.u - previous) / (1 - previous) })
+        event.node = split.node
+        if (split.split) splits.push(split.split)
+        current = split.split!.towardB
+        previous = event.u
+        previousNode = split.node
+      }
+    }
+    const chain: NodeId[] = [start.node]
+    for (let segment = 0; segment < points.length - 1; segment++) {
+      const crossings = events.filter((event) => event.segment === segment && event.node !== undefined).sort((a, b) => a.t - b.t)
+      for (const event of crossings) if (chain[chain.length - 1] !== event.node) chain.push(event.node!)
+      const waypoint = waypointNodes[segment + 1]!
+      if (chain[chain.length - 1] !== waypoint) chain.push(waypoint)
+    }
     const edges: EdgeId[] = []
     for (let i = 1; i < chain.length; i++) edges.push(this.addEdge(chain[i - 1]!, chain[i]!, options).id)
-    return { edge: edges[0]!, edges, nodes: chain, splits: start.split ? [start.split] : [] }
+    if (edges.length === 0) throw new Error('cannot connect: zero-length')
+    return { edge: edges[0]!, edges, nodes: chain, splits }
   }
 
   /**
@@ -466,6 +583,18 @@ export interface NearestLocation {
   readonly position: Point
   /** Distance from the query point to `position`. */
   readonly distance: number
+}
+
+/** Proper intersection of two finite segments, including endpoints on pq. */
+function segmentIntersection(a: Point, b: Point, p: Point, q: Point): { t: number; u: number; point: Point } | undefined {
+  const rx = b.x - a.x, ry = b.y - a.y, sx = q.x - p.x, sy = q.y - p.y
+  const denominator = rx * sy - ry * sx
+  if (Math.abs(denominator) < 1e-9) return undefined
+  const qpx = p.x - a.x, qpy = p.y - a.y
+  const t = (qpx * sy - qpy * sx) / denominator
+  const u = (qpx * ry - qpy * rx) / denominator
+  if (t < -1e-7 || t > 1 + 1e-7 || u < -1e-7 || u > 1 + 1e-7) return undefined
+  return { t: clamp01(t), u: clamp01(u), point: { x: a.x + rx * t, y: a.y + ry * t } }
 }
 
 function clamp01(t: number): number {
