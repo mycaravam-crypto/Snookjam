@@ -98,14 +98,15 @@ export type ConnectionCheck =
     }
 
 /** A connection check for a freehand path, with the road geometry it would build. */
-export type PathCheck = ConnectionCheck & {
-  /**
-   * Smoothed road polyline from the snapped start to the snapped end (or to
-   * the raw pointer when the end is not on a road). Empty when the start is
-   * not on a road.
-   */
-  readonly path: readonly Point[]
-}
+export type PathCheck =
+  | { readonly ok: true; readonly from: NearestLocation; readonly to?: NearestLocation; readonly path: readonly Point[] }
+  | {
+      readonly ok: false
+      readonly reason: RejectionReason
+      readonly from?: NearestLocation
+      readonly to?: NearestLocation
+      readonly path: readonly Point[]
+    }
 
 /** Snaps a world point to the road network, or undefined if too far away. */
 export function snapToRoad(
