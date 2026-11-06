@@ -4,6 +4,10 @@ defineEmits<{ play: [] }>()
 
 <template>
   <section class="start" aria-labelledby="title">
+    <div class="logo" aria-hidden="true">
+      <span class="logo-car logo-car--a" />
+      <span class="logo-car logo-car--b" />
+    </div>
     <h1 id="title">Snookjam</h1>
     <p class="tagline">Keep the traffic flowing through the countryside.</p>
     <ol class="how-to" aria-label="How to play">

@@ -25,6 +25,7 @@ watch(
   <div v-if="visible" class="overlay" data-testid="overlay" :data-state="snapshot.state">
     <section ref="card" class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
       <template v-if="snapshot.state === 'paused'">
+        <div class="overlay-badge" aria-hidden="true">❚❚</div>
         <h2 id="overlay-title">Paused</h2>
         <p>Traffic is frozen. You can still build roads while paused.</p>
         <div class="overlay-actions">
@@ -36,6 +37,7 @@ watch(
       </template>
 
       <template v-else-if="snapshot.state === 'levelComplete'">
+        <div class="overlay-badge" aria-hidden="true">★</div>
         <h2 id="overlay-title">Level {{ snapshot.level }} complete</h2>
         <p>
           You kept traffic moving for {{ formatTime(snapshot.levelTime) }}.
@@ -51,6 +53,7 @@ watch(
       </template>
 
       <template v-else>
+        <div class="overlay-badge" aria-hidden="true">✕</div>
         <h2 id="overlay-title">Gridlock!</h2>
         <p>
           Congestion hit 100% on level {{ snapshot.level }} after {{ formatTime(snapshot.levelTime) }}.
