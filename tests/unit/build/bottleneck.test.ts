@@ -59,7 +59,7 @@ function scenario(seed: number) {
     minSpawnIntervalSec: 0.6,
   })
   const controller = new ConstructionController(world, graph, undefined, (from, to, via) => {
-    const result = graph.connect(from, to, {}, via)
+    const result = to.kind === 'point' ? graph.connectToPoint(from, to.position, {}, via) : graph.connect(from, to, {}, via)
     for (const split of result.splits) sim.applySplit(split)
     return result
   })
