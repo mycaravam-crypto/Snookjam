@@ -47,7 +47,7 @@ describe('ConstructionController', () => {
     expect(graph.nodeCount).toBeGreaterThan(initialNodes)
     const deadEnd = first.road.to
     expect(controller.pointerDown(deadEnd)).toBe(true)
-    const second = controller.pointerUp({ x: 5.5, y: 4.5 })
+    const second = controller.pointerUp({ x: 4.2, y: 4.5 })
     expect(second.kind).toBe('committed')
   })
 
