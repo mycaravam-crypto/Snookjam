@@ -28,8 +28,9 @@ npm run dev     # start the Vite dev server at http://localhost:5173
 | `npm run build`      | Type-check, then production build into `dist/`  |
 | `npm run preview`    | Serve the production build locally              |
 | `npm run typecheck`  | Type-check TypeScript and Vue files (`vue-tsc`) |
-| `npm test`           | Run the unit tests once (Vitest + jsdom)        |
+| `npm test`           | Unit and integration tests once (Vitest + jsdom) |
 | `npm run test:watch` | Run the tests in watch mode                     |
+| `npm run test:e2e`   | Browser tests against the production build (Playwright, Chromium) |
 
 ## Project structure
 
@@ -155,6 +156,46 @@ that within a level, starts 25 % lower each level, and never drops below
 `DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
 without player roads: levels 1–2 stay below about 5 % congestion, level 3
 peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
+
+## Testing
+
+- **Unit tests** (`tests/unit`) cover each module: world generation,
+  road graph and routing, traffic, construction, congestion and lifecycle.
+- **Integration tests** (`tests/integration`) run the whole game logic
+  together with fixed seeds and fixed 50 ms steps, with no wall-clock timing.
+  The core scenario uses seed 77, level 3. Without player roads the level is
+  lost (congestion reaches 100 % at 166 s). A single road from (23.5, 7.5) to
+  (22.5, 13.5), built 12 s in, completes the level with congestion peaking
+  around 21 %, and more vehicles leave the map. If generation or balance
+  changes, find a new relieving road by trying every valid single road on a
+  map that is lost without help.
+- **Browser tests** (`tests/e2e`) start the production build with
+  `vite preview` and drive Chromium through Playwright along the critical
+  flow: start screen → Play → map and moving vehicles → congestion rises
+  while roads are blocked and falls when they reopen → drag to build a road,
+  which the graph accepts and rerouted traffic uses → invalid drag rejected
+  without page scroll or selection → pause/resume (button and `P` key) →
+  game over → restart with no leftover roads, time or congestion → level
+  complete → next level. `?test` exposes the game controller as
+  `window.__snookjam`. Tests use it to read state and to fast-forward the
+  simulation in fixed steps; every player action goes through the real UI.
+  Install the browser once with `npx playwright install chromium`. CI runs
+  these tests in a separate `e2e` job.
+
+**Performance** (Node 22 / headless Chromium in a 4-core Linux container):
+
+- Simulation: with 94–100 active vehicles on a 40 × 30 map, one 50 ms step
+  takes about 0.05 ms (integration test).
+- Rendering: with about 90 active vehicles on a 1280 × 720 viewport, the game
+  runs at 60 fps (mean frame 16.6 ms, p95 16.8 ms; browser test).
+
+**Known limitations.**
+
+- Only Chromium is tested; touch input is covered by unit tests of the
+  pointer handling, not by a real touch device.
+- The browser tests use the test hook to create a jam and to reach game over
+  or level completion quickly. Losing by organic traffic and saving a level by
+  building a road are proven deterministically in the integration tests.
 
 ## Tech stack
 
