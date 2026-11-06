@@ -78,9 +78,26 @@ or the app layer.
   line at the bottom says why (e.g. "Roads cannot cross water").
 - A road is rejected if it does not start and end on the network, is shorter
   than one tile, duplicates or runs along an existing road, crosses water or
-  leaves the map, or crosses another road anywhere except at its ends.
+  leaves the map, crosses another road anywhere except at its ends, passes
+  closer than one road width to another road, or meets a road at less than 60°.
 - New roads join the road graph immediately (splitting the roads they attach
   to), so later route queries can use them.
+
+## Roads and traffic
+
+Every road is a classic two-lane road: one lane per direction, driving on the
+right, with a dashed centre line. Dimensions live in `src/game/sim/lanes.ts`
+(`ROAD_GEOMETRY`) and are shared by the simulation, road building and drawing:
+lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
+
+- Vehicles keep to their lane and pass oncoming traffic without touching.
+  `sim.lanePositionOf(vehicle)` gives the in-lane position; vehicles follow a
+  short curve through bends and turns, so they never jump lanes.
+- Following distance (1.24 tiles) is kept per lane and across nodes.
+- Intersections have a stop line and a junction box that one vehicle holds at
+  a time, entering only when it has room to leave. Intersections too close to
+  stop between them share one box, so they cannot deadlock. Tunnels where two
+  or more roads meet work the same way.
 
 ## World and maps
 

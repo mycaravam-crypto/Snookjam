@@ -164,9 +164,18 @@ describe('movement and exit', () => {
       ],
     })
     const s = new TrafficSim(g, { portals: [0, 2], random: { next: () => 0 }, startingVehicles: 1, spawnIntervalSec: 1000 })
-    run(s, 6) // lead is 1.2 tiles in, so portal 0 has room again
+    // Once the lead is minGap in, portal 0 has room again for the follower.
+    run(s, 1) // the starting vehicle enters
+    while (s.vehicles()[0]!.stepIndex === 0 && s.vehicles()[0]!.progress < s.minGap) run(s, 1)
     s.queueSpawns(1)
-    run(s, 30)
+    // Wait until the slow lead is a full minGap into the bottleneck; until then
+    // the follower creeps up behind it across the node (#22).
+    const leadIn = () => {
+      const v = s.vehicles()[0]!
+      return v.stepIndex === 1 && v.progress >= s.minGap + 0.1
+    }
+    for (let i = 0; i < 400 && !leadIn(); i++) run(s, 1)
+    run(s, 20) // the fast follower reaches the junction
     const [lead, follower] = s.vehicles()
     expect(lead!.steps[lead!.stepIndex]!.edge).toBe(1)
     expect(follower!.state).toBe('waiting')

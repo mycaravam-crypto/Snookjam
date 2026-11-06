@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
+import { checkConnection, ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
 
 const DT = 1 / 20
 
@@ -165,10 +165,12 @@ describe('GameSession lifecycle', () => {
     s.start()
     ticks(s, 5)
     const controller = new ConstructionController(s.world, s.graph, undefined, (a, b) => s.connectRoad(a, b))
-    const edge = s.graph.edges().find((e) => e.length >= 4)!
-    const other = s.graph.edges().find((e) => e.id !== edge.id && e.a !== edge.a && e.a !== edge.b && e.b !== edge.a && e.b !== edge.b)!
-    const from = s.graph.positionOf({ kind: 'edge', edge: edge.id, t: 0.5 })
-    const to = s.graph.positionOf({ kind: 'edge', edge: other.id, t: 0.5 })
+    // Mid-edge to mid-edge, picking a pair the construction rules accept
+    // (two-lane spacing and join angles, #22).
+    const mids = s.graph.edges().filter((e) => e.length >= 4).map((e) => s.graph.positionOf({ kind: 'edge', edge: e.id, t: 0.5 }))
+    const pair = mids.flatMap((a) => mids.map((b) => [a, b] as const)).find(([a, b]) => checkConnection(s.world, s.graph, a, b).ok)!
+    expect(pair).toBeDefined()
+    const [from, to] = pair
     controller.pointerDown(from)
     controller.pointerMove(to)
     const outcome = controller.pointerUp(to)

@@ -2,6 +2,7 @@ import type { BuiltRoad, ConstructionPreview } from '../build/controller'
 import type { Point } from '../roads/graph'
 import { worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
+import { CENTRE_LINE_WIDTH, ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH } from './roadStyle'
 import { COLORS } from './palette'
 
 export type ConstructionContext = RenderContext & Pick<CanvasRenderingContext2D, 'globalAlpha'>
@@ -12,8 +13,8 @@ export function renderBuiltRoads(ctx: ConstructionContext, roads: readonly Built
   ctx.save()
   ctx.lineCap = 'round'
   for (const [color, width] of [
-    [COLORS.roadEdge, 0.62],
-    [COLORS.road, 0.48],
+    [COLORS.roadEdge, ROAD_EDGE_WIDTH],
+    [COLORS.road, ROAD_SURFACE_WIDTH],
   ] as const) {
     ctx.strokeStyle = color
     ctx.lineWidth = Math.max(2, s * width)
@@ -21,7 +22,7 @@ export function renderBuiltRoads(ctx: ConstructionContext, roads: readonly Built
   }
   if (s >= 10) {
     ctx.strokeStyle = COLORS.roadMarking
-    ctx.lineWidth = Math.max(1, s * 0.05)
+    ctx.lineWidth = Math.max(1, s * CENTRE_LINE_WIDTH)
     ctx.setLineDash([s * 0.25, s * 0.25])
     for (const road of roads) line(ctx, v, road.from, road.to)
     ctx.setLineDash([])

@@ -1,5 +1,6 @@
 import { EPSILON, type NearestLocation, type Point, type RoadEdge, type RoadGraph, type RoadLocation } from '../roads/graph'
 import { isPassable, terrainAt, type World } from '../world/types'
+import { roadWidth } from '../sim/lanes'
 
 export interface ConstructionOptions {
   /** How far (tiles) from a road a pointer may be and still snap to it. */
@@ -10,8 +11,15 @@ export interface ConstructionOptions {
   readonly minLength: number
   /** Longest road the player may build, in tiles (Infinity = no limit). */
   readonly maxLength: number
-  /** Half the drawn road width, used when checking terrain under the road. */
+  /** Half the road width, used when checking terrain under the road. */
   readonly halfWidth: number
+  /**
+   * Minimum distance (tiles) between the new road's centre line and any road
+   * it does not join, so the two-lane surfaces never overlap (#22).
+   */
+  readonly clearance: number
+  /** Minimum angle (radians) between the new road and a road it joins. */
+  readonly minJoinAngle: number
 }
 
 export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
@@ -19,7 +27,9 @@ export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   nodeSnap: 0.5,
   minLength: 1,
   maxLength: Infinity,
-  halfWidth: 0.2,
+  halfWidth: roadWidth() / 2,
+  clearance: roadWidth(),
+  minJoinAngle: Math.PI / 3,
 })
 
 export type RejectionReason =
@@ -31,6 +41,8 @@ export type RejectionReason =
   | 'duplicate'
   | 'obstacle'
   | 'crosses-road'
+  | 'too-close'
+  | 'too-sharp'
 
 /** Player-facing explanation for each rejection. */
 export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
@@ -42,6 +54,8 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   duplicate: 'There is already a road here',
   obstacle: 'Roads cannot cross water',
   'crosses-road': 'Roads may only meet at their ends',
+  'too-close': 'Too close to another road',
+  'too-sharp': 'Roads must meet at a wider angle',
 }
 
 export type ConnectionCheck =
@@ -100,6 +114,9 @@ export function checkConnection(
 
   const roads = checkRoadCrossings(graph, from.location, to.location, a, b)
   if (roads) return { ok: false, reason: roads, from, to }
+
+  const spacing = checkRoadSpacing(graph, from.location, to.location, a, b, options)
+  if (spacing) return { ok: false, reason: spacing, from, to }
 
   return { ok: true, from, to }
 }
@@ -203,4 +220,69 @@ function overlaps(a: Point, b: Point, p: Point, q: Point): boolean {
   const lo = Math.max(0, Math.min(tp, tq))
   const hi = Math.min(1, Math.max(tp, tq))
   return hi - lo > 1e-6
+}
+
+/**
+ * Two-lane roads need room (#22): the new road must meet the roads it joins
+ * at a reasonable angle, and stay at least `clearance` away from every other
+ * road, so lanes of different roads never overlap.
+ */
+export function checkRoadSpacing(
+  graph: RoadGraph,
+  from: RoadLocation,
+  to: RoadLocation,
+  a: Point,
+  b: Point,
+  options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
+): 'too-close' | 'too-sharp' | undefined {
+  const joined = new Set<number>()
+  for (const [location, at, other] of [
+    [from, a, b],
+    [to, b, a],
+  ] as const) {
+    const out = unit(at, other)
+    for (const edge of edgesAt(graph, location)) {
+      joined.add(edge)
+      // Directions along the joined road, away from the junction point.
+      const e = graph.getEdge(edge)!
+      for (const end of [e.a, e.b]) {
+        const p = graph.getNode(end)!.position
+        if (Math.hypot(p.x - at.x, p.y - at.y) < EPSILON) continue
+        const along = unit(at, p)
+        const angle = Math.acos(Math.max(-1, Math.min(1, along.x * out.x + along.y * out.y)))
+        if (angle < options.minJoinAngle - 1e-9) return 'too-sharp'
+      }
+    }
+  }
+  for (const edge of graph.edges()) {
+    if (joined.has(edge.id)) continue
+    const p = graph.getNode(edge.a)!.position
+    const q = graph.getNode(edge.b)!.position
+    if (segmentDistance(a, b, p, q) < options.clearance - 1e-9) return 'too-close'
+  }
+  return undefined
+}
+
+function unit(from: Point, to: Point): Point {
+  const len = Math.hypot(to.x - from.x, to.y - from.y) || 1
+  return { x: (to.x - from.x) / len, y: (to.y - from.y) / len }
+}
+
+function pointSegmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
+}
+
+/** Shortest distance between two segments (0 if they intersect). */
+export function segmentDistance(a: Point, b: Point, p: Point, q: Point): number {
+  if (segmentsIntersect(a, b, p, q) || segmentsIntersect(p, q, a, b)) return 0
+  return Math.min(
+    pointSegmentDistance(a, p, q),
+    pointSegmentDistance(b, p, q),
+    pointSegmentDistance(p, a, b),
+    pointSegmentDistance(q, a, b),
+  )
 }
