@@ -1,4 +1,4 @@
-import type { World } from '../world/types'
+import type { Point, World } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
 import { COLORS, FIELD_COLORS, FONT_FAMILY, ROOF_COLORS, TERRAIN_COLORS } from './palette'
@@ -33,6 +33,8 @@ export type RenderContext = Pick<
 export interface RenderOptions {
   /** Draw settlement names (skipped automatically when tiles are tiny). */
   readonly labels?: boolean
+  /** Additional player-built centre lines, rendered in the same road pass. */
+  readonly additionalRoads?: readonly (readonly Point[])[]
 }
 
 /**
@@ -53,7 +55,7 @@ export function renderWorld(
 
   drawMapFrame(ctx, world, viewport)
   drawTerrain(ctx, world, viewport)
-  drawRoads(ctx, world, viewport)
+  drawRoads(ctx, world, viewport, options.additionalRoads ?? [])
   drawSettlements(ctx, world, viewport, options.labels !== false && s >= 11)
   drawPortals(ctx, world, viewport)
   ctx.restore()
@@ -187,10 +189,11 @@ function drawTrees(ctx: RenderContext, trees: Tree[], s: number): void {
   }
 }
 
-function drawRoads(ctx: RenderContext, world: World, v: Viewport): void {
-  // Portal roads continue to the tunnel mouth on the map edge.
+function drawRoads(ctx: RenderContext, world: World, v: Viewport, additional: readonly (readonly import('../world/types').Point[])[]): void {
+  // Draw generated and player-built roads in one shared stroke pass. Separate
+  // passes caused junction shadows and kerbs to be painted over one another.
   const stubs = world.portals.map((p) => [{ x: p.tile.tx + 0.5, y: p.tile.ty + 0.5 }, p.mouth])
-  strokeRoads(ctx, v, [...world.roads.segments.map((seg) => seg.points), ...stubs])
+  strokeRoads(ctx, v, [...world.roads.segments.map((seg) => seg.points), ...stubs, ...additional])
 }
 
 function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: boolean): void {
