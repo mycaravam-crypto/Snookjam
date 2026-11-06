@@ -98,14 +98,15 @@ export type ConnectionCheck =
     }
 
 /** A connection check for a freehand path, with the road geometry it would build. */
-export type PathCheck = ConnectionCheck & {
-  /**
-   * Smoothed road polyline from the snapped start to the snapped end (or to
-   * the raw pointer when the end is not on a road). Empty when the start is
-   * not on a road.
-   */
-  readonly path: readonly Point[]
-}
+export type PathCheck =
+  | { readonly ok: true; readonly from: NearestLocation; readonly to?: NearestLocation; readonly path: readonly Point[] }
+  | {
+      readonly ok: false
+      readonly reason: RejectionReason
+      readonly from?: NearestLocation
+      readonly to?: NearestLocation
+      readonly path: readonly Point[]
+    }
 
 /** Snaps a world point to the road network, or undefined if too far away. */
 export function snapToRoad(
@@ -131,6 +132,7 @@ export function checkConnection(
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
 ): ConnectionCheck {
   const { path: _path, ...check } = checkPath(world, graph, start, end, [], options)
+  if (check.ok && !check.to) return { ok: false, reason: 'not-connected', from: check.from }
   return check as ConnectionCheck
 }
 
@@ -153,16 +155,17 @@ export function checkPath(
   if (!from) return { ok: false, reason: 'not-on-road', path: [] }
   const to = snapToRoad(graph, end, options)
   const path = buildRoadPath(from.position, to?.position ?? end, samples, options)
-  if (!to) return { ok: false, reason: 'not-connected', from, path }
-  const fail = (reason: RejectionReason): PathCheck => ({ ok: false, reason, from, to, path })
+  const fail = (reason: RejectionReason): PathCheck => ({ ok: false, reason, from, ...(to ? { to } : {}), path })
 
   const length = pathLength(path)
   if (length < options.minLength) return fail('too-short')
   if (length > options.maxLength) return fail('too-long')
 
   const via = path.slice(1, -1)
-  const graphCheck = graph.canConnect(from.location, to.location, via)
-  if (!graphCheck.ok) return fail(graphCheck.reason === 'zero-length' ? 'too-short' : 'duplicate')
+  if (to) {
+    const graphCheck = graph.canConnect(from.location, to.location, via)
+    if (!graphCheck.ok) return fail(graphCheck.reason === 'zero-length' ? 'too-short' : 'duplicate')
+  }
 
   for (let i = 1; i < path.length; i++) {
     const terrain = checkTerrain(world, path[i - 1]!, path[i]!, options.halfWidth)
@@ -172,13 +175,13 @@ export function checkPath(
   const selfCrossing = checkSelfCrossing(path)
   if (selfCrossing) return fail(selfCrossing)
 
-  const roads = checkPathCrossings(graph, from.location, to.location, path, options.clearance)
+  const roads = checkPathCrossings(graph, from.location, to?.location, path, options.clearance)
   if (roads) return fail(roads)
 
-  const spacing = checkRoadSpacing(graph, from.location, to.location, path, options)
+  const spacing = checkRoadSpacing(graph, from.location, to?.location, path, options)
   if (spacing) return fail(spacing)
 
-  return { ok: true, from, to, path }
+  return { ok: true, from, ...(to ? { to } : {}), path }
 }
 
 /**
@@ -218,16 +221,16 @@ export function checkSelfCrossing(path: readonly Point[]): 'self-crossing' | und
 export function checkPathCrossings(
   graph: RoadGraph,
   from: RoadLocation,
-  to: RoadLocation,
+  to: RoadLocation | undefined,
   path: readonly Point[],
   clearance: number,
 ): 'crosses-road' | 'duplicate' | 'too-close' | undefined {
   const last = path.length - 1
+  if (path.length === 2 && to) return checkRoadCrossings(graph, from, to, path[0]!, path[1]!)
   for (let i = 1; i <= last; i++) {
     const a = path[i - 1]!
     const b = path[i]!
-    if (path.length === 2) return checkRoadCrossings(graph, from, to, a, b)
-    const touching = new Set<number>([...(i === 1 ? edgesAt(graph, from) : []), ...(i === last ? edgesAt(graph, to) : [])])
+    const touching = new Set<number>([...(i === 1 ? edgesAt(graph, from) : []), ...(i === last && to ? edgesAt(graph, to) : [])])
     for (const edge of graph.edges()) {
       const p = graph.getNode(edge.a)!.position
       const q = graph.getNode(edge.b)!.position
@@ -305,7 +308,8 @@ export function checkRoadCrossings(
   return undefined
 }
 
-function edgesAt(graph: RoadGraph, location: RoadLocation): number[] {
+function edgesAt(graph: RoadGraph, location: RoadLocation | undefined): number[] {
+  if (!location) return []
   if (location.kind === 'edge') return [location.edge]
   return graph.edgesAt(location.node).map((e: RoadEdge) => e.id)
 }
@@ -364,14 +368,14 @@ function overlaps(a: Point, b: Point, p: Point, q: Point): boolean {
 export function checkRoadSpacing(
   graph: RoadGraph,
   from: RoadLocation,
-  to: RoadLocation,
+  to: RoadLocation | undefined,
   path: readonly Point[],
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
 ): 'too-close' | 'too-sharp' | undefined {
   if (path.length < 2) return undefined
   const last = path.length - 1
   const startEdges = edgesAt(graph, from)
-  const endEdges = edgesAt(graph, to)
+  const endEdges = to ? edgesAt(graph, to) : []
 
   if (options.minJoinAngle > 0) for (const [edges, at, next] of [
     [startEdges, path[0]!, path[1]!],

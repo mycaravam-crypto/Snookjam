@@ -1,5 +1,5 @@
 import { shallowRef, type ShallowRef } from 'vue'
-import { ConstructionController, GameSession, type SessionSnapshot, type SessionState } from '@game/index'
+import { ConstructionController, GameSession, type ConstructionTarget, type SessionSnapshot, type SessionState } from '@game/index'
 
 /** States in which the player may build roads (#7 contract). */
 export function canBuild(state: SessionState): boolean {
@@ -36,7 +36,8 @@ export function createGameController(seed: number | string): GameController {
   let unsubscribe = bind(session.value)
 
   function makeConstruction(s: GameSession): ConstructionController {
-    return new ConstructionController(s.world, s.graph, undefined, (from, to, via) => s.connectRoad(from, to, undefined, via))
+    return new ConstructionController(s.world, s.graph, undefined, (from, to: ConstructionTarget, via) =>
+      to.kind === 'point' ? s.connectRoadToPoint(from, to.position, undefined, via) : s.connectRoad(from, to, undefined, via))
   }
 
   function bind(s: GameSession): () => void {

@@ -223,7 +223,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="`Map of seed ${world.seed}. Draw from a road to another road to build a connection.`"
+    :aria-label="`Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

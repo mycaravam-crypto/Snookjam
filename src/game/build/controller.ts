@@ -52,7 +52,8 @@ export type ConstructionOutcome =
  * supply its own (e.g. one that also migrates vehicles on split edges). It
  * must leave the graph unchanged if it throws.
  */
-export type CommitConnection = (from: RoadLocation, to: RoadLocation, via: readonly Point[]) => ConnectResult
+export type ConstructionTarget = RoadLocation | { readonly kind: 'point'; readonly position: Point }
+export type CommitConnection = (from: RoadLocation, to: ConstructionTarget, via: readonly Point[]) => ConnectResult
 
 /**
  * Freehand drag-to-build state machine (#6, #18). Takes world coordinates
@@ -78,7 +79,8 @@ export class ConstructionController {
     readonly world: World,
     readonly graph: RoadGraph,
     readonly options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
-    private readonly commit: CommitConnection = (from, to, via) => graph.connect(from, to, {}, via),
+    private readonly commit: CommitConnection = (from, to, via) =>
+      to.kind === 'point' ? graph.connectToPoint(from, to.position, {}, via) : graph.connect(from, to, {}, via),
   ) {}
 
   get preview(): ConstructionPreview | undefined {
@@ -143,11 +145,12 @@ export class ConstructionController {
     })
     if (check.ok) {
       try {
-        const result = this.commit(check.from.location, check.to.location, check.path.slice(1, -1))
+        const target: ConstructionTarget = check.to?.location ?? { kind: 'point', position: preview.pointer }
+        const result = this.commit(check.from.location, target, check.path.slice(1, -1))
         const road: BuiltRoad = {
           id: this.built.length,
           from: check.from.position,
-          to: check.to.position,
+          to: check.to?.position ?? preview.pointer,
           points: check.path,
         }
         this.built.push(road)

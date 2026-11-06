@@ -75,6 +75,18 @@ describe('freehand road drawing', () => {
     })
   })
 
+  it('validates an open endpoint without requiring a destination snap', () => {
+    const { world, graph } = setup()
+    const check = checkPath(world, graph, { x: 2.5, y: 1.5 }, { x: 3.5, y: 3.5 }, [
+      { x: 3, y: 2.5 },
+    ])
+    expect(check.ok).toBe(true)
+    if (check.ok) {
+      expect(check.to).toBeUndefined()
+      expect(check.path.at(-1)).toEqual({ x: 3.5, y: 3.5 })
+    }
+  })
+
   it('previews the smoothed trajectory while drawing', () => {
     const { controller } = setup()
     controller.pointerDown({ x: 3, y: 1.7 })
@@ -85,7 +97,7 @@ describe('freehand road drawing', () => {
     expect(preview.path[0]).toEqual({ x: 3, y: 1.5 })
     expect(preview.path[preview.path.length - 1]).toEqual({ x: 4.6, y: 3.6 })
     expect(preview.path.length).toBeGreaterThan(2)
-    expect(preview.check).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(preview.check.ok).toBe(true)
     expect(preview.endSnap).toBeUndefined()
   })
 
@@ -155,12 +167,12 @@ describe('generous snapping', () => {
     expect(controller.preview!.endSnap).toBeUndefined()
   })
 
-  it('does not connect outside the configured tolerance', () => {
+  it('allows an open endpoint outside the configured snap tolerance', () => {
     const tight = setup(constructionOptions({ snapDistance: 0.5 }))
     expect(tight.controller.pointerDown({ x: 3, y: 2.6 })).toBe(false)
     const outcome = draw(tight.controller, { x: 3, y: 1.7 }, CURVE, { x: 7.6, y: 4.5 })
-    expect(outcome).toMatchObject({ kind: 'rejected', reason: 'not-connected' })
-    expect(tight.controller.builtRoads).toHaveLength(0)
+    expect(outcome.kind).toBe('committed')
+    expect(tight.controller.builtRoads).toHaveLength(1)
   })
 
   it('rejects invalid tolerance settings', () => {

@@ -27,10 +27,10 @@ export interface PathOptions {
 }
 
 export const DEFAULT_PATH_OPTIONS: PathOptions = Object.freeze({
-  sampleSpacing: 0.15,
-  resampleSpacing: 0.25,
-  smoothingPasses: 3,
-  simplifyTolerance: 0.2,
+  sampleSpacing: 0.08,
+  resampleSpacing: 0.15,
+  smoothingPasses: 1,
+  simplifyTolerance: 0.1,
   minSegmentLength: 0.5,
 })
 
@@ -131,6 +131,7 @@ export function buildRoadPath(
   samples: readonly Point[],
   options: PathOptions = DEFAULT_PATH_OPTIONS,
 ): Point[] {
+  if (samples.length === 0) return [{ x: start.x, y: start.y }, { x: end.x, y: end.y }]
   const trim = options.minSegmentLength
   const interior = samples.filter((p) => distance(p, start) >= trim && distance(p, end) >= trim)
   const raw = [start, ...interior, end]

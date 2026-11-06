@@ -52,7 +52,7 @@ function runLevel(s: GameSession, onTick?: () => void): { peak: number } {
 
 /** Builds the scenario road through the same controller the canvas uses. */
 function buildRoad(s: GameSession) {
-  const controller = new ConstructionController(s.world, s.graph, undefined, (a, b) => s.connectRoad(a, b))
+  const controller = new ConstructionController(s.world, s.graph, undefined, (a, b, via) => b.kind === 'point' ? s.connectRoadToPoint(a, b.position, undefined, via) : s.connectRoad(a, b, undefined, via))
   expect(controller.pointerDown(ROAD.from)).toBe(true)
   controller.pointerMove(ROAD.to)
   const outcome = controller.pointerUp(ROAD.to)

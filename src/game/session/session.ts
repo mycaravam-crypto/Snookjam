@@ -239,6 +239,16 @@ export class GameSession {
     return result
   }
 
+  /** Adds a road ending on open terrain and migrates traffic on a split start edge. */
+  connectRoadToPoint(from: RoadLocation, point: Point, options?: EdgeOptions, via: readonly Point[] = []): ConnectResult {
+    if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
+      throw new Error(`cannot build roads while ${this.stateValue}`)
+    }
+    const result = this.current.graph.connectToPoint(from, point, options, via)
+    this.applyConnection(result)
+    return result
+  }
+
   /**
    * Applies a connection that was already committed to `session.graph`
    * elsewhere (e.g. by ConstructionController, #6), migrating vehicles on

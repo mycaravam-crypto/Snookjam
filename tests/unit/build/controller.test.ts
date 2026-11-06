@@ -28,11 +28,27 @@ describe('ConstructionController', () => {
     expect(controller.pointerDown({ x: 2.4, y: 1.8 })).toBe(true)
     expect(controller.preview?.from).toEqual({ x: 2.4, y: 1.5 })
     controller.pointerMove({ x: 2.4, y: 3.2 })
-    expect(controller.preview?.check).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(controller.preview?.check.ok).toBe(true)
     expect(controller.preview?.to).toEqual({ x: 2.4, y: 3.2 })
     controller.pointerMove({ x: 2.4, y: 5.3 })
     expect(controller.preview?.check.ok).toBe(true)
     expect(controller.preview?.to).toEqual({ x: 2.4, y: 5.5 })
+  })
+
+  it('allows a road to end on open terrain and extends that dead end later', () => {
+    const { controller, graph } = setup()
+    const initialNodes = graph.nodeCount
+    controller.pointerDown({ x: 2.5, y: 1.5 })
+    controller.pointerMove({ x: 3, y: 2.5 })
+    const first = controller.pointerUp({ x: 3.5, y: 3.5 })
+    expect(first.kind).toBe('committed')
+    if (first.kind !== 'committed') return
+    expect(first.road.to).toEqual({ x: 3.5, y: 3.5 })
+    expect(graph.nodeCount).toBeGreaterThan(initialNodes)
+    const deadEnd = first.road.to
+    expect(controller.pointerDown(deadEnd)).toBe(true)
+    const second = controller.pointerUp({ x: 4.2, y: 4.5 })
+    expect(second.kind).toBe('committed')
   })
 
   it('commits exactly one connection on a valid pointer-up', () => {
@@ -128,7 +144,7 @@ describe('ConstructionController custom commit', () => {
   it('commits through the supplied function', () => {
     const world = asciiWorld(LOOP)
     const graph = createRoadGraph(world)
-    const commit = vi.fn((from, to) => graph.connect(from, to))
+    const commit = vi.fn((from, to) => to.kind === 'point' ? graph.connectToPoint(from, to.position) : graph.connect(from, to))
     const controller = new ConstructionController(world, graph, undefined, commit)
     controller.pointerDown({ x: 2.5, y: 1.5 })
     expect(controller.pointerUp({ x: 2.5, y: 5.5 }).kind).toBe('committed')
