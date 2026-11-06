@@ -18,13 +18,17 @@ export const CENTRE_LINE_WIDTH = 0.04
 /** Shadow offset under roads, in CSS pixels (down-right, like the rest of the map). */
 const SHADOW = 1.5
 
-function trace(ctx: RenderContext, v: Viewport, points: readonly Point[], dx = 0, dy = 0): void {
+function traceAll(ctx: RenderContext, v: Viewport, lines: readonly (readonly Point[])[], dx = 0, dy = 0): void {
   ctx.beginPath()
-  points.forEach((point, k) => {
-    const q = worldToScreen(v, point)
-    if (k === 0) ctx.moveTo(q.x + dx, q.y + dy)
-    else ctx.lineTo(q.x + dx, q.y + dy)
-  })
+  for (const points of lines) {
+    if (points.length < 2) continue
+    points.forEach((point, k) => {
+      const q = worldToScreen(v, point)
+      if (k === 0) ctx.moveTo(q.x + dx, q.y + dy)
+      else ctx.lineTo(q.x + dx, q.y + dy)
+    })
+  }
+  // One stroke per style pass avoids repeatedly painting overlapping caps.
   ctx.stroke()
 }
 
@@ -46,13 +50,13 @@ export function strokeRoads(ctx: RenderContext, v: Viewport, lines: readonly (re
   for (const [color, width, offset] of passes) {
     ctx.strokeStyle = color
     ctx.lineWidth = Math.max(2, s * width)
-    for (const points of drawn) trace(ctx, v, points, offset, offset)
+    traceAll(ctx, v, drawn, offset, offset)
   }
   if (s >= 10) {
     ctx.strokeStyle = COLORS.roadMarking
     ctx.lineWidth = Math.max(1, s * CENTRE_LINE_WIDTH)
     ctx.setLineDash([s * 0.25, s * 0.25])
-    for (const points of drawn) trace(ctx, v, points)
+    traceAll(ctx, v, drawn)
     ctx.setLineDash([])
   }
 }
