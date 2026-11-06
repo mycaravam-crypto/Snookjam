@@ -205,11 +205,17 @@ test.describe('critical player flow', () => {
     expect((await state(page)).activeVehicles).toBeGreaterThan(0)
     // Close every road so the vehicles on the map queue at their junctions.
     await fastForward(page, 10, `for (const e of s.graph.edges()) s.graph.setBlocked(e.id, true)`)
+    // Pause before comparing the model and HUD. Otherwise the real-time RAF
+    // loop keeps changing congestion while Playwright waits for the assertion.
+    await page.getByTestId('hud-pause').click()
+    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
     const jammed = await state(page)
-    expect(jammed.state).toBe('running')
+    expect(jammed.state).toBe('paused')
     expect(jammed.congestion).toBeGreaterThan(5)
     await expect(page.getByTestId('hud-congestion-text')).toContainText(`${Math.round(jammed.congestion)}%`)
-    // Reopen the roads: queues clear and congestion falls.
+    // Reopen the roads, resume and verify that queues clear.
+    await page.getByTestId('overlay-resume').click()
+    await expect(page.getByTestId('overlay')).toHaveCount(0)
     await fastForward(page, 40, `for (const e of s.graph.edges()) s.graph.setBlocked(e.id, false)`)
     const cleared = await state(page)
     expect(cleared.state).toBe('running')
