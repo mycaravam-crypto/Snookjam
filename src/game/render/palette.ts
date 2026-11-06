@@ -23,4 +23,7 @@ export const COLORS = {
   tunnelArch: '#8a8577',
   label: '#1f2a1b',
   labelHalo: '#ffffffcc',
+  buildValid: '#2fbf4a',
+  buildInvalid: '#e0402f',
+  buildOutline: '#ffffff',
 }
