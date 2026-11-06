@@ -65,6 +65,13 @@ export function mixedVehicleGeometry(g: RoadGeometry = ROAD_GEOMETRY): RoadGeome
   return { ...g, vehicleLength: Math.max(...Object.values(VEHICLE_PROFILES).map((profile) => profile.length)) }
 }
 
+export function vehicleFollowingGap(follower: VehicleClass, leader: VehicleClass, g: RoadGeometry = ROAD_GEOMETRY): number {
+  const a = VEHICLE_PROFILES[follower]
+  const b = VEHICLE_PROFILES[leader]
+  return (a.length + b.length) / 2 +
+    2 * (laneOffset(g) + Math.max(a.width, b.width) / 2 + g.safetyGap)
+}
+
 export function mixedVehicleMinGap(g: RoadGeometry = ROAD_GEOMETRY): number {
   return Math.max(...Object.values(VEHICLE_PROFILES).map((profile) =>
     profile.length + 2 * (laneOffset(g) + profile.width / 2 + g.safetyGap),
@@ -680,10 +687,7 @@ export class TrafficSim {
    * nearest vehicle ahead in any later lane, up to `cap` (Infinity if none).
    */
   private followingGap(follower: MutableVehicle, leader: MutableVehicle): number {
-    const a = VEHICLE_PROFILES[follower.kind]
-    const b = VEHICLE_PROFILES[leader.kind]
-    return (a.length + b.length) / 2 +
-      2 * (laneOffset(this.geometry) + Math.max(a.width, b.width) / 2 + this.geometry.safetyGap)
+    return vehicleFollowingGap(follower.kind, leader.kind, this.geometry)
   }
 
   private gapAhead(v: MutableVehicle, fromIndex: number, cap: number): number {
