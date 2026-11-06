@@ -503,6 +503,8 @@ kbd {
 }
 
 .overlay-card {
+  position: relative;
+  z-index: 1; /* above the confetti */
   width: 100%;
   max-width: 360px;
   max-height: 100%;
@@ -566,6 +568,55 @@ kbd {
   color: var(--card-muted);
 }
 
+/* Level-complete celebration */
+.overlay-badge--win {
+  animation: star-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) 0.1s both;
+}
+
+.overlay[data-state='levelComplete'] .overlay-card {
+  box-shadow:
+    0 8px 0 #c9cfbf,
+    0 0 0 4px var(--gold),
+    0 0 60px #ffcf3f88,
+    0 24px 50px #000000aa;
+}
+
+@keyframes star-pop {
+  from {
+    transform: scale(0) rotate(-180deg);
+  }
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.25, 0.6, 0.5, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift), 105vh) rotate(var(--spin));
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -580,6 +631,9 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
   *,
   *::before,
   *::after {

@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { SessionSnapshot } from '@game/index'
 import { formatTime } from '../format'
+import ConfettiBurst from './ConfettiBurst.vue'
 
 const props = defineProps<{ snapshot: SessionSnapshot }>()
 defineEmits<{ resume: []; restart: []; nextLevel: []; newMap: []; quit: [] }>()
@@ -23,6 +24,7 @@ watch(
 
 <template>
   <div v-if="visible" class="overlay" data-testid="overlay" :data-state="snapshot.state">
+    <ConfettiBurst v-if="snapshot.state === 'levelComplete'" />
     <section ref="card" class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
       <template v-if="snapshot.state === 'paused'">
         <div class="overlay-badge" aria-hidden="true">❚❚</div>
@@ -37,7 +39,7 @@ watch(
       </template>
 
       <template v-else-if="snapshot.state === 'levelComplete'">
-        <div class="overlay-badge" aria-hidden="true">★</div>
+        <div class="overlay-badge overlay-badge--win" aria-hidden="true">★</div>
         <h2 id="overlay-title">Level {{ snapshot.level }} complete</h2>
         <p>
           You kept traffic moving for {{ formatTime(snapshot.levelTime) }}.

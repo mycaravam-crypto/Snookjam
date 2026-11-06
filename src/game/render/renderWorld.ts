@@ -1,7 +1,7 @@
 import type { Point, World } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
-import { COLORS, TERRAIN_COLORS } from './palette'
+import { COLORS, FONT_FAMILY, TERRAIN_COLORS } from './palette'
 
 /** The subset of CanvasRenderingContext2D the world renderer uses. */
 export type RenderContext = Pick<
@@ -161,7 +161,7 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
       // Above the village on screen, whatever the map rotation.
       const centre = worldToScreen(v, { x: tx + 0.5, y: ty + 0.5 })
       const p = { x: centre.x, y: centre.y - (r + 0.65) * s }
-      ctx.font = `600 ${Math.round(Math.max(11, s * 0.55))}px system-ui, sans-serif`
+      ctx.font = `600 ${Math.round(Math.max(11, s * 0.55))}px ${FONT_FAMILY}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'bottom'
       ctx.strokeStyle = COLORS.labelHalo
