@@ -1,4 +1,4 @@
-import type { ConnectResult, Point, RoadGraph } from '../roads/graph'
+import type { ConnectResult, Point, RoadGraph, RoadLocation } from '../roads/graph'
 import type { World } from '../world/types'
 import {
   checkConnection,
@@ -32,6 +32,12 @@ export type ConstructionOutcome =
   | { readonly kind: 'none' }
 
 /**
+ * Commits a validated connection. Defaults to `graph.connect`; a game session
+ * can supply its own (e.g. one that also migrates vehicles on split edges).
+ */
+export type CommitConnection = (from: RoadLocation, to: RoadLocation) => ConnectResult
+
+/**
  * Drag-to-build state machine. Takes world coordinates only: converting
  * pointer events to world points is the UI's job, and validation lives in
  * validate.ts.
@@ -53,6 +59,7 @@ export class ConstructionController {
     readonly world: World,
     readonly graph: RoadGraph,
     readonly options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
+    private readonly commit: CommitConnection = (from, to) => graph.connect(from, to),
   ) {}
 
   get preview(): ConstructionPreview | undefined {
@@ -98,7 +105,7 @@ export class ConstructionController {
     const { check } = preview
     let outcome: ConstructionOutcome
     if (check.ok) {
-      const result = this.graph.connect(check.from.location, check.to.location)
+      const result = this.commit(check.from.location, check.to.location)
       const road: BuiltRoad = { id: this.built.length, from: check.from.position, to: check.to.position }
       this.built.push(road)
       outcome = { kind: 'committed', road, result }

@@ -123,3 +123,15 @@ describe('ConstructionController', () => {
     expect(roads[0]!.to.y).toBeCloseTo(roads[1]!.to.y)
   })
 })
+
+describe('ConstructionController custom commit', () => {
+  it('commits through the supplied function', () => {
+    const world = asciiWorld(LOOP)
+    const graph = createRoadGraph(world)
+    const commit = vi.fn((from, to) => graph.connect(from, to))
+    const controller = new ConstructionController(world, graph, undefined, commit)
+    controller.pointerDown({ x: 2.5, y: 1.5 })
+    expect(controller.pointerUp({ x: 2.5, y: 5.5 }).kind).toBe('committed')
+    expect(commit).toHaveBeenCalledTimes(1)
+  })
+})
