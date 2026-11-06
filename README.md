@@ -170,19 +170,32 @@ peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
   changes, find a new relieving road by trying every valid single road on a
   map that is lost without help.
 - **Browser tests** (`tests/e2e`) start the production build with
-  `vite preview` and drive Chromium through Playwright: start screen → Play →
-  map drawn → drag to build a road → invalid drag rejected → no page scroll or
-  text selection during the gesture. Install the browser once with
-  `npx playwright install chromium`. CI runs these tests in a separate job.
+  `vite preview` and drive Chromium through Playwright along the critical
+  flow: start screen → Play → map and moving vehicles → congestion rises
+  while roads are blocked and falls when they reopen → drag to build a road,
+  which the graph accepts and rerouted traffic uses → invalid drag rejected
+  without page scroll or selection → pause/resume (button and `P` key) →
+  game over → restart with no leftover roads, time or congestion → level
+  complete → next level. `?test` exposes the game controller as
+  `window.__snookjam`. Tests use it to read state and to fast-forward the
+  simulation in fixed steps; every player action goes through the real UI.
+  Install the browser once with `npx playwright install chromium`. CI runs
+  these tests in a separate `e2e` job.
 
-**Performance.** With 94–100 active vehicles on a 40 × 30 map, one 50 ms
-simulation step takes about 0.05 ms (Node 22, 4-core Linux container,
-integration test). Rendering is measured in the browser tests once vehicles
-are drawn (#8).
+**Performance** (Node 22 / headless Chromium in a 4-core Linux container):
 
-**Known limitations.** The congestion, pause, level-complete and game-over
-steps of the browser flow are covered by the integration tests, not yet in the
-browser, because the HUD and overlays arrive with #8. Only Chromium is tested.
+- Simulation: with 94–100 active vehicles on a 40 × 30 map, one 50 ms step
+  takes about 0.05 ms (integration test).
+- Rendering: with about 90 active vehicles on a 1280 × 720 viewport, the game
+  runs at 60 fps (mean frame 16.6 ms, p95 16.8 ms; browser test).
+
+**Known limitations.**
+
+- Only Chromium is tested; touch input is covered by unit tests of the
+  pointer handling, not by a real touch device.
+- The browser tests use the test hook to create a jam and to reach game over
+  or level completion quickly. Losing by organic traffic and saving a level by
+  building a road are proven deterministically in the integration tests.
 
 ## Tech stack
 
