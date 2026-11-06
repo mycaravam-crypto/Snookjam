@@ -5,17 +5,29 @@ import {
   fitViewport,
   renderBuiltRoads,
   renderConstructionPreview,
+  renderVehicles,
   renderWorld,
   snapToRoad,
   type ConstructionController,
   type ConstructionFeedback,
   type ConstructionOutcome,
   type Point,
+  type TrafficSim,
   type Viewport,
   type World,
 } from '@game/index'
 
-const props = defineProps<{ world: World; construction?: ConstructionController }>()
+const props = withDefaults(
+  defineProps<{
+    world: World
+    construction?: ConstructionController
+    /** Traffic to draw on top of the map. */
+    traffic?: TrafficSim
+    /** Whether pointer input may build roads. */
+    interactive?: boolean
+  }>(),
+  { construction: undefined, traffic: undefined, interactive: true },
+)
 const emit = defineEmits<{ outcome: [ConstructionOutcome] }>()
 
 const FEEDBACK_MS = 700
@@ -28,12 +40,15 @@ let activePointer: number | undefined
 let feedback: ConstructionFeedback | undefined
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
 let unsubscribe: (() => void) | undefined
+let background: HTMLCanvasElement | undefined
+let backgroundWorld: World | undefined
+let backgroundKey = ''
 
 /** Current world↔screen mapping in CSS pixels. */
 function getViewport(): Viewport | undefined {
   return viewport
 }
-defineExpose({ getViewport })
+defineExpose({ getViewport, draw })
 
 function draw(): void {
   frame = 0
@@ -52,12 +67,28 @@ function draw(): void {
   }
   const ctx = el.getContext('2d')
   if (!ctx) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  renderWorld(ctx, props.world, viewport)
-  if (props.construction) {
-    renderBuiltRoads(ctx, props.construction.builtRoads, viewport)
-    renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
+  // The map and built roads change rarely: render them once into a cached
+  // layer and copy it each frame, then draw the moving parts on top.
+  const roads = props.construction?.builtRoads.length ?? 0
+  const key = `${pixelW}x${pixelH}@${dpr}#${roads}`
+  if (!background || backgroundWorld !== props.world || backgroundKey !== key) {
+    background = background ?? document.createElement('canvas')
+    background.width = pixelW
+    background.height = pixelH
+    const bg = background.getContext('2d')
+    if (bg) {
+      bg.setTransform(dpr, 0, 0, dpr, 0, 0)
+      renderWorld(bg, props.world, viewport)
+      if (props.construction) renderBuiltRoads(bg, props.construction.builtRoads, viewport)
+    }
+    backgroundWorld = props.world
+    backgroundKey = key
   }
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.drawImage(background, 0, 0)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
+  if (props.traffic) renderVehicles(ctx, props.traffic, viewport)
 }
 
 function scheduleDraw(): void {
@@ -74,7 +105,7 @@ function toWorld(e: PointerEvent): Point | undefined {
 
 function onPointerDown(e: PointerEvent): void {
   const c = props.construction
-  if (!c || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
+  if (!c || !props.interactive || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
   const point = toWorld(e)
   if (!point || !c.pointerDown(point)) return
   e.preventDefault()
@@ -89,7 +120,7 @@ function onPointerMove(e: PointerEvent): void {
   if (activePointer === e.pointerId) {
     e.preventDefault()
     c.pointerMove(point)
-  } else if (e.pointerType === 'mouse' && canvas.value) {
+  } else if (e.pointerType === 'mouse' && canvas.value && props.interactive) {
     // Hint that a drag can start here.
     canvas.value.style.cursor = snapToRoad(c.graph, point, c.options) ? 'crosshair' : 'default'
   }
@@ -141,6 +172,15 @@ onBeforeUnmount(() => {
   clearTimeout(feedbackTimer)
   if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
 })
+watch(
+  () => props.interactive,
+  (interactive) => {
+    if (interactive || activePointer === undefined) return
+    activePointer = undefined
+    props.construction?.cancel()
+    if (canvas.value) canvas.value.style.cursor = 'default'
+  },
+)
 watch(
   () => [props.world, props.construction] as const,
   () => {

@@ -1,50 +1,38 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import {
-  ConstructionController,
-  createRoadGraph,
-  DEFAULT_CONFIG,
-  generateWorld,
-  REJECTION_MESSAGES,
-  type ConstructionOutcome,
-} from '@game/index'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { REJECTION_MESSAGES, type ConstructionOutcome } from '@game/index'
+import { canBuild, createGameController } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
+import GameHud from './GameHud.vue'
+import GameOverlay from './GameOverlay.vue'
 import WorldCanvas from './WorldCanvas.vue'
 
-defineEmits<{ quit: [] }>()
+const emit = defineEmits<{ quit: [] }>()
 
-const config = DEFAULT_CONFIG
-const seed = shallowRef<number | string>(initialSeed())
-const world = computed(() =>
-  generateWorld(seed.value, { width: config.mapWidth, height: config.mapHeight }),
-)
-const construction = computed(() => new ConstructionController(world.value, createRoadGraph(world.value)))
+const game = createGameController(initialSeed())
+const { snapshot, construction, session } = game
+const canvas = ref<InstanceType<typeof WorldCanvas> | null>(null)
+
+const world = computed(() => {
+  // Re-read on every snapshot: restart()/nextLevel() replace the world.
+  void snapshot.value
+  return session.value.world
+})
+const sim = computed(() => {
+  void snapshot.value
+  return session.value.sim
+})
+const interactive = computed(() => canBuild(snapshot.value.state))
 
 const HINT = 'Drag from a road to another road to build a connection.'
 const status = ref(HINT)
-const builtCount = ref(0)
 let lastOutcome = ''
 
 function refreshStatus(): void {
-  const c = construction.value
-  const preview = c.preview
-  builtCount.value = c.builtRoads.length
+  const preview = construction.value.preview
   if (preview) status.value = preview.check.ok ? 'Release to build' : `Can't build: ${REJECTION_MESSAGES[preview.check.reason]}`
   else status.value = lastOutcome || HINT
 }
-
-let unsubscribe: (() => void) | undefined
-watch(
-  construction,
-  (c) => {
-    unsubscribe?.()
-    lastOutcome = ''
-    unsubscribe = c.onChange(refreshStatus)
-    refreshStatus()
-  },
-  { immediate: true },
-)
-onBeforeUnmount(() => unsubscribe?.())
 
 function onOutcome(outcome: ConstructionOutcome): void {
   if (outcome.kind === 'committed') lastOutcome = 'Road built'
@@ -52,24 +40,83 @@ function onOutcome(outcome: ConstructionOutcome): void {
   refreshStatus()
 }
 
-function newMap(): void {
-  seed.value = randomSeed()
+// Frame loop: advance the simulation by real time, then redraw.
+let raf = 0
+let last: number | undefined
+function loop(now: number): void {
+  const dt = last === undefined ? 0 : Math.min(0.25, (now - last) / 1000)
+  last = now
+  game.frame(dt)
+  canvas.value?.draw()
+  raf = requestAnimationFrame(loop)
+}
+
+function onKey(e: KeyboardEvent): void {
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+    e.preventDefault()
+    game.togglePause()
+  }
+}
+
+function onVisibility(): void {
+  if (document.hidden) game.pause()
+}
+
+let unwatchConstruction: (() => void) | undefined
+function watchConstruction(): void {
+  unwatchConstruction?.()
+  lastOutcome = ''
+  unwatchConstruction = construction.value.onChange(refreshStatus)
+  refreshStatus()
+}
+
+onMounted(() => {
+  game.start()
+  watchConstruction()
+  window.addEventListener('keydown', onKey)
+  document.addEventListener('visibilitychange', onVisibility)
+  if (typeof requestAnimationFrame === 'function') raf = requestAnimationFrame(loop)
+})
+onBeforeUnmount(() => {
+  if (raf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf)
+  window.removeEventListener('keydown', onKey)
+  document.removeEventListener('visibilitychange', onVisibility)
+  unwatchConstruction?.()
+  game.dispose()
+})
+
+// A new level or game brings a new construction controller.
+watch(construction, watchConstruction)
+
+defineExpose({ game })
+
+// Test hook for browser tests (#9): always in dev, and in production only with ?test in the URL.
+if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test')) {
+  ;(window as unknown as { __snookjam?: unknown }).__snookjam = game
 }
 </script>
 
 <template>
   <div class="shell" data-testid="game-shell">
-    <header class="hud">
-      <span>Level 1</span>
-      <span data-testid="seed">Seed {{ world.seed }}</span>
-      <span data-testid="built">Roads built {{ builtCount }}</span>
-      <button type="button" data-testid="new-map" @click="newMap">New map</button>
-      <button type="button" class="back" @click="$emit('quit')">Back</button>
-    </header>
+    <GameHud :snapshot="snapshot" @pause="game.pause()" @resume="game.resume()" />
     <div class="stage">
-      <WorldCanvas :world="world" :construction="construction" @outcome="onOutcome" />
-      <!-- Overlaid so status changes never resize the canvas mid-gesture. -->
-      <p class="status" data-testid="build-status" role="status" aria-live="polite">{{ status }}</p>
+      <WorldCanvas
+        ref="canvas"
+        :world="world"
+        :construction="construction"
+        :traffic="sim"
+        :interactive="interactive"
+        @outcome="onOutcome"
+      />
+      <p v-if="interactive" class="status" data-testid="build-status" role="status" aria-live="polite">{{ status }}</p>
+      <GameOverlay
+        :snapshot="snapshot"
+        @resume="game.resume()"
+        @restart="game.restart()"
+        @next-level="game.nextLevel()"
+        @new-map="game.newGame(randomSeed())"
+        @quit="emit('quit')"
+      />
     </div>
   </div>
 </template>

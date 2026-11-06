@@ -36,7 +36,10 @@ npm run dev     # start the Vite dev server at http://localhost:5173
 ```
 src/
   main.ts        App entry point: mounts Vue
-  app/           Vue UI: components, styles. May import from src/game.
+  app/           Vue UI. May import from src/game; owns no game rules.
+    components/  StartScreen, GameShell (frame loop), GameHud, GameOverlay,
+                 WorldCanvas (canvas drawing + pointer input)
+    game/        gameController: reactive wrapper around GameSession
   game/          Framework-independent game logic. Must not import Vue or src/app.
     config.ts    MVP tuning defaults
     roads/       Road graph and shortest-time routing
@@ -55,6 +58,14 @@ or the app layer.
 
 ## Controls
 
+- **Start:** press **Play** on the title screen. The run starts immediately.
+- **Pause / resume:** the Pause button in the top bar, or <kbd>P</kbd> / <kbd>Esc</kbd>.
+  The game also pauses when the tab is hidden. You can still build while paused.
+- **HUD:** level, time survived out of the level target, active cars, and the
+  congestion meter with its percentage and a text state (Flowing / Warning
+  from 50% / Critical from 80%, which is also striped).
+- **Overlays:** Paused (resume, restart, new map, quit), Level complete
+  (continue to the next level) and Gridlock (try again, new map, quit).
 - **Build a road:** press on an existing road, drag to another road, release.
   Works with mouse, touch and stylus (Pointer Events). Endpoints snap to the
   nearest road within ¾ of a tile, and to a junction within ½ a tile.
