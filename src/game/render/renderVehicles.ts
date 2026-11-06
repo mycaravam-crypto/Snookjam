@@ -1,5 +1,5 @@
 import { ROAD_GEOMETRY } from '../sim/lanes'
-import type { TrafficSim, Vehicle, VehicleState } from '../sim/traffic'
+import { VEHICLE_PROFILES, type TrafficSim, type Vehicle, type VehicleState } from '../sim/traffic'
 import { screenAngle, worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
 import { COLORS, FONT_FAMILY } from './palette'
