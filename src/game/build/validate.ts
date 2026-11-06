@@ -4,10 +4,9 @@ import { roadWidth } from '../sim/lanes'
 import { buildRoadPath, DEFAULT_PATH_OPTIONS, pathLength, pointSegmentDistance, type PathOptions } from './path'
 
 /**
- * Snap tolerance in tiles (#18). Deliberately generous: at the smallest
- * playable zoom a tile is ~16 CSS px, so 1.25 tiles is ~20 px either side of a
- * road, about the size of a fingertip contact and well beyond mouse jitter,
- * while still less than the ~2-tile gap between parallel generated roads.
+ * Start acquisition remains conservative so a drag begins on the road the
+ * player intended. The release end uses a wider radius to make connections
+ * forgiving, especially on touch screens.
  */
 export const DEFAULT_SNAP_DISTANCE = 1.25
 
@@ -35,6 +34,7 @@ export interface ConstructionOptions extends PathOptions {
 export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   ...DEFAULT_PATH_OPTIONS,
   snapDistance: DEFAULT_SNAP_DISTANCE,
+  endSnapDistance: 2,
   nodeSnap: 0.5,
   minLength: 1,
   maxLength: Infinity,
@@ -49,6 +49,9 @@ export function constructionOptions(overrides: Partial<ConstructionOptions> = {}
   const options = { ...DEFAULT_CONSTRUCTION_OPTIONS, ...overrides }
   if (!(options.snapDistance > 0) || !Number.isFinite(options.snapDistance)) {
     throw new RangeError('snapDistance must be a positive number')
+  }
+  if (!(options.endSnapDistance > 0) || !Number.isFinite(options.endSnapDistance)) {
+    throw new RangeError('endSnapDistance must be a positive number')
   }
   if (options.nodeSnap < 0 || !(options.minSegmentLength > 0) || options.sampleSpacing < 0 || !(options.resampleSpacing > 0)) {
     throw new RangeError('invalid construction options')
@@ -153,7 +156,7 @@ export function checkPath(
 ): PathCheck {
   const from = snapToRoad(graph, start, options)
   if (!from) return { ok: false, reason: 'not-on-road', path: [] }
-  const to = snapToRoad(graph, end, options)
+  const to = graph.nearestLocation(end, options.endSnapDistance, options.nodeSnap)
   const path = buildRoadPath(from.position, to?.position ?? end, samples, options)
   const fail = (reason: RejectionReason): PathCheck => ({ ok: false, reason, from, ...(to ? { to } : {}), path })
 
