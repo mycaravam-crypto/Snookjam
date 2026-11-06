@@ -33,6 +33,16 @@ describe('GameOverlay', () => {
     expect(w.find('[data-testid="overlay-next"]').text()).toContain('level 3')
   })
 
+  it('celebrates a completed level with confetti only', () => {
+    const won = mount(GameOverlay, { props: { snapshot: snap({ state: 'levelComplete' }) } })
+    const confetti = won.find('[data-testid="confetti"]')
+    expect(confetti.exists()).toBe(true)
+    expect(confetti.attributes('aria-hidden')).toBe('true')
+    for (const state of ['paused', 'gameOver'] as const) {
+      expect(mount(GameOverlay, { props: { snapshot: snap({ state }) } }).find('[data-testid="confetti"]').exists()).toBe(false)
+    }
+  })
+
   it('reports the run and offers a restart on game over', async () => {
     const w = mount(GameOverlay, {
       props: { snapshot: snap({ state: 'gameOver', level: 3, levelTime: 65, totalTime: 425, congestion: 100 }) },

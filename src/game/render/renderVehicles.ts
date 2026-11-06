@@ -1,7 +1,7 @@
 import type { TrafficSim, Vehicle, VehicleState } from '../sim/traffic'
 import { screenAngle, worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
-import { COLORS } from './palette'
+import { COLORS, FONT_FAMILY } from './palette'
 
 export type VehicleContext = RenderContext & Pick<CanvasRenderingContext2D, 'translate' | 'rotate'>
 
@@ -60,7 +60,7 @@ function drawCar(
   ctx.restore()
   if (vehicle.state === 'stuck') {
     ctx.fillStyle = COLORS.vehicleStuck
-    ctx.font = `700 ${Math.round(Math.max(10, length * 1.2))}px system-ui, sans-serif`
+    ctx.font = `700 ${Math.round(Math.max(10, length * 1.2))}px ${FONT_FAMILY}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
     ctx.fillText('!', x, y - width)

@@ -8,6 +8,9 @@ export const TERRAIN_COLORS: Record<Terrain, string> = {
   settlement: '#c9b79c',
 }
 
+/** Font stack for canvas text; matches the UI's display font, with a system fallback. */
+export const FONT_FAMILY = "Fredoka, system-ui, sans-serif"
+
 export const COLORS = {
   background: '#2d3a26',
   fieldFurrow: '#c2ab52',

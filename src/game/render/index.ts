@@ -6,4 +6,4 @@ export {
   type ConstructionFeedback,
 } from './renderConstruction'
 export { renderVehicles, type VehicleContext } from './renderVehicles'
-export { TERRAIN_COLORS, COLORS } from './palette'
+export { TERRAIN_COLORS, COLORS, FONT_FAMILY } from './palette'
