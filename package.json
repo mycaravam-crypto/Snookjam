@@ -1,0 +1,32 @@
+{
+  "name": "snookjam",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A single-player browser game about keeping rural traffic flowing.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "vue": "^3.5.45"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "jsdom": "^31.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  }
+}

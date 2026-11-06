@@ -1,0 +1,76 @@
+:root {
+  --bg: #e9efe0;
+  --fg: #1f2a1b;
+  --accent: #2f6b2f;
+  --accent-fg: #ffffff;
+  --panel: #ffffffcc;
+  color-scheme: light;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.start {
+  margin: auto;
+  padding: 16px;
+  text-align: center;
+}
+
+.start h1 {
+  font-size: clamp(2.5rem, 10vw, 4.5rem);
+  margin: 0 0 0.25em;
+}
+
+.play {
+  font-size: 1.25rem;
+  padding: 0.6em 2em;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+
+.shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.hud {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--panel);
+}
+
+.hud button {
+  margin-left: auto;
+}
+
+.world {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  touch-action: none;
+}
