@@ -1,4 +1,4 @@
-import type { World } from '../world/types'
+import type { Point, World } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
 import { COLORS, FIELD_COLORS, FONT_FAMILY, ROOF_COLORS, TERRAIN_COLORS } from './palette'
@@ -34,7 +34,7 @@ export interface RenderOptions {
   /** Draw settlement names (skipped automatically when tiles are tiny). */
   readonly labels?: boolean
   /** Additional player-built centre lines, rendered in the same road pass. */
-  readonly additionalRoads?: readonly (readonly import('../world/types').Point[])[]
+  readonly additionalRoads?: readonly (readonly Point[])[]
 }
 
 /**
