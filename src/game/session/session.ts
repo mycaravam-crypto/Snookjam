@@ -16,7 +16,7 @@
  * Vue components read snapshot() and call the transition methods.
  */
 import { DEFAULT_CONFIG } from '../config'
-import type { ConnectResult, EdgeOptions, RoadGraph, RoadLocation } from '../roads'
+import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from '../roads'
 import { FixedStepClock, TrafficSim } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, spawnIntervalAt, startingVehiclesFor, type BalanceConfig } from './balance'
@@ -225,11 +225,16 @@ export class GameSession {
    * Terrain/obstacle validation is the caller's responsibility (#6); this
    * throws if the graph rejects the connection, leaving everything unchanged.
    */
-  connectRoad(from: RoadLocation, to: RoadLocation, options?: EdgeOptions): ConnectResult {
+  connectRoad(
+    from: RoadLocation,
+    to: RoadLocation,
+    options?: EdgeOptions,
+    via: readonly Point[] = [],
+  ): ConnectResult {
     if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
-    const result = this.current.graph.connect(from, to, options)
+    const result = this.current.graph.connect(from, to, options, via)
     this.applyConnection(result)
     return result
   }

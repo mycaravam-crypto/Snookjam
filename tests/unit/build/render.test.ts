@@ -38,7 +38,7 @@ describe('construction rendering', () => {
     expect(empty.calls.filter((c) => c.name === 'stroke')).toHaveLength(0)
 
     const built = recorder()
-    renderBuiltRoads(built.ctx, [{ id: 0, from: { x: 1, y: 1 }, to: { x: 1, y: 5 } }], v)
+    renderBuiltRoads(built.ctx, [{ id: 0, from: { x: 1, y: 1 }, to: { x: 1, y: 5 }, points: [{ x: 1, y: 1 }, { x: 1, y: 5 }] }], v)
     expect(built.calls.filter((c) => c.name === 'stroke').length).toBeGreaterThanOrEqual(2)
   })
 })
