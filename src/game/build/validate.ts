@@ -11,8 +11,10 @@ import { buildRoadPath, DEFAULT_PATH_OPTIONS, pathLength, pointSegmentDistance, 
 export const DEFAULT_SNAP_DISTANCE = 1.25
 
 export interface ConstructionOptions extends PathOptions {
-  /** How far (tiles) from a road a pointer may be and still snap to it. */
+  /** Start acquisition radius (tiles). */
   readonly snapDistance: number
+  /** Release-end radius (tiles); wider to make connections forgiving. */
+  readonly endSnapDistance: number
   /** Within this distance (tiles) of a node, snap to the node itself. */
   readonly nodeSnap: number
   /** Shortest road the player may build, in tiles. */
