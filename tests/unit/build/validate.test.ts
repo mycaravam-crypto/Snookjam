@@ -87,10 +87,16 @@ describe('checkConnection', () => {
     })
   })
 
-  it('rejects a road that meets another at a very sharp angle (#22)', () => {
+  it('allows a road that meets another at a very sharp angle', () => {
     const { world, graph } = setup()
-    // Leaves the bottom road's end at about 53 degrees to it (minimum is 60).
-    expect(checkConnection(world, graph, { x: 1.5, y: 5.5 }, { x: 4.5, y: 1.5 })).toMatchObject({ reason: 'too-sharp' })
+    // Leaves the bottom road's end at about 53 degrees to it.
+    expect(checkConnection(world, graph, { x: 1.5, y: 5.5 }, { x: 4.5, y: 1.5 }).ok).toBe(true)
+  })
+
+  it('can still enforce a minimum join angle when configured (#22)', () => {
+    const { world, graph } = setup()
+    const options = constructionOptions({ minJoinAngle: Math.PI / 3 })
+    expect(checkConnection(world, graph, { x: 1.5, y: 5.5 }, { x: 4.5, y: 1.5 }, options)).toMatchObject({ reason: 'too-sharp' })
   })
 
   it('rejects a road that runs too close to another road (#22)', () => {

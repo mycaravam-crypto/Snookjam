@@ -28,7 +28,7 @@ export interface ConstructionOptions extends PathOptions {
    * surfaces never overlap (#22).
    */
   readonly clearance: number
-  /** Minimum angle (radians) between the new road and a road it joins (#22). */
+  /** Minimum angle (radians) between the new road and a road it joins (#22); 0 disables the check. */
   readonly minJoinAngle: number
 }
 
@@ -40,7 +40,8 @@ export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   maxLength: Infinity,
   halfWidth: roadWidth() / 2,
   clearance: roadWidth(),
-  minJoinAngle: Math.PI / 3,
+  // No minimum: players may join roads at any angle, realistic or not.
+  minJoinAngle: 0,
 })
 
 /** Defaults with selected overrides, e.g. a larger snap distance for touch. */
@@ -354,11 +355,11 @@ function overlaps(a: Point, b: Point, p: Point, q: Point): boolean {
 
 /**
  * Two-lane roads need room (#22). The new road's first and last segments
- * must meet the roads they join at `minJoinAngle` or more, and every segment
- * must stay at least `clearance` from roads it does not join. Near its own
- * ends (within `clearance` along the path) a segment may of course approach
- * the roads it joins there; consecutive segments of the new road are never
- * checked against each other.
+ * must meet the roads they join at `minJoinAngle` or more (off by default),
+ * and every segment must stay at least `clearance` from roads it does not
+ * join. Near its own ends (within `clearance` along the path) a segment may
+ * of course approach the roads it joins there; consecutive segments of the
+ * new road are never checked against each other.
  */
 export function checkRoadSpacing(
   graph: RoadGraph,
@@ -372,7 +373,7 @@ export function checkRoadSpacing(
   const startEdges = edgesAt(graph, from)
   const endEdges = edgesAt(graph, to)
 
-  for (const [edges, at, next] of [
+  if (options.minJoinAngle > 0) for (const [edges, at, next] of [
     [startEdges, path[0]!, path[1]!],
     [endEdges, path[last]!, path[last - 1]!],
   ] as const) {
