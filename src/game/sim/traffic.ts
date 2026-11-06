@@ -47,6 +47,37 @@ export interface RandomSource {
   next(): number
 }
 
+export type VehicleClass = 'car' | 'van' | 'truck'
+
+/** Simulation-space vehicle profiles. Width stays inside one lane. */
+export const VEHICLE_PROFILES: Readonly<Record<VehicleClass, { readonly length: number; readonly width: number; readonly speedFactor: number }>> = Object.freeze({
+  car: Object.freeze({ length: 0.5, width: 0.22, speedFactor: 1 }),
+  van: Object.freeze({ length: 0.68, width: 0.24, speedFactor: 0.88 }),
+  truck: Object.freeze({ length: 0.9, width: 0.26, speedFactor: 0.72 }),
+})
+
+export type VehicleMix = Readonly<Record<VehicleClass, number>>
+
+export const DEFAULT_VEHICLE_MIX: VehicleMix = Object.freeze({ car: 1, van: 0, truck: 0 })
+
+/** Conservative mixed-traffic gap: safe even when a truck follows another truck. */
+export function mixedVehicleGeometry(g: RoadGeometry = ROAD_GEOMETRY): RoadGeometry {
+  return { ...g, vehicleLength: Math.max(...Object.values(VEHICLE_PROFILES).map((profile) => profile.length)) }
+}
+
+export function vehicleFollowingGap(follower: VehicleClass, leader: VehicleClass, g: RoadGeometry = ROAD_GEOMETRY): number {
+  const a = VEHICLE_PROFILES[follower]
+  const b = VEHICLE_PROFILES[leader]
+  return (a.length + b.length) / 2 +
+    2 * (laneOffset(g) + Math.max(a.width, b.width) / 2 + g.safetyGap)
+}
+
+export function mixedVehicleMinGap(g: RoadGeometry = ROAD_GEOMETRY): number {
+  return Math.max(...Object.values(VEHICLE_PROFILES).map((profile) =>
+    profile.length + 2 * (laneOffset(g) + profile.width / 2 + g.safetyGap),
+  ))
+}
+
 export interface TrafficOptions {
   /** Graph nodes where vehicles enter and leave. */
   readonly portals: readonly NodeId[]
@@ -67,12 +98,15 @@ export interface TrafficOptions {
   readonly junctionClearSec?: number
   /** Two-lane road and vehicle dimensions (defaults to ROAD_GEOMETRY). */
   readonly geometry?: RoadGeometry
+  /** Relative spawn weights; normalized internally. */
+  readonly vehicleMix?: Partial<VehicleMix>
 }
 
 export type VehicleState = 'moving' | 'waiting' | 'stuck'
 
 export interface Vehicle {
   readonly id: number
+  readonly kind: VehicleClass
   readonly origin: NodeId
   readonly destination: NodeId
   /** Planned steps; `steps[stepIndex]` is the edge currently driven. */
@@ -111,6 +145,7 @@ export interface TrafficStats {
 
 interface MutableVehicle {
   id: number
+  kind: VehicleClass
   origin: NodeId
   destination: NodeId
   steps: RouteStep[]
@@ -144,6 +179,7 @@ export class TrafficSim {
   readonly maxPendingSpawns: number
   readonly junctionClearSec: number
   readonly geometry: RoadGeometry
+  private vehicleMix: VehicleMix
   /** Distance before a right-angle (or wider) intersection where vehicles stop (vehicle centre). */
   readonly stopDistance: number
 
@@ -188,6 +224,7 @@ export class TrafficSim {
     this.spawnInterval = options.spawnIntervalSec ?? DEFAULT_CONFIG.initialSpawnIntervalSec
     this.minSpawnIntervalSec = options.minSpawnIntervalSec ?? DEFAULT_CONFIG.minSpawnIntervalSec
     this.geometry = options.geometry ?? ROAD_GEOMETRY
+    this.vehicleMix = normalizeVehicleMix(options.vehicleMix)
     this.minGap = options.minGap ?? Math.max(VEHICLE_SPACING, minFollowingDistance(this.geometry))
     this.junctionClearSec = options.junctionClearSec ?? DEFAULT_JUNCTION_CLEAR_SEC
     this.maxPendingSpawns = options.maxPendingSpawns ?? this.maxVehicles
@@ -196,6 +233,11 @@ export class TrafficSim {
     validateRoadGeometry(this.geometry, this.minGap)
     this.stopDistance = junctionStopDistance(this.geometry)
     this.setSpawnInterval(this.spawnInterval)
+  }
+
+  /** Updates the deterministic weighted vehicle mix for subsequent spawns. */
+  setVehicleMix(mix: Partial<VehicleMix>): void {
+    this.vehicleMix = normalizeVehicleMix(mix)
   }
 
   get spawnIntervalSec(): number {
@@ -344,19 +386,21 @@ export class TrafficSim {
     const atEnd: MutableVehicle[] = []
     for (const lane of this.lanes.values()) {
       let limit = Infinity
+      let leader: MutableVehicle | undefined
       for (const v of lane) {
         const step = v.steps[v.stepIndex]!
         const edge = this.graph.getEdge(step.edge)!
         // Followers respect stop lines too: at a sharp join the stop line can
         // lie further back than the following distance behind a box holder.
-        limit = limit === Infinity ? this.frontLimit(v, edge.length) : Math.min(limit, this.stopLineLimit(v, edge.length))
-        const target = Math.min(edge.length, limit, v.progress + edge.speedLimit * dt)
+        limit = leader === undefined ? this.frontLimit(v, edge.length) : Math.min(limit, this.stopLineLimit(v, edge.length), leader.progress - this.followingGap(v, leader))
+        const target = Math.min(edge.length, limit, v.progress + edge.speedLimit * VEHICLE_PROFILES[v.kind].speedFactor * dt)
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
         v.speed = moved / dt
         v.state = moved > 1e-9 ? 'moving' : v.state === 'stuck' ? 'stuck' : 'waiting'
         if (v.progress >= edge.length - 1e-9) atEnd.push(v)
-        limit = v.progress - this.minGap
+        leader = v
+        limit = Infinity
       }
     }
 
@@ -642,13 +686,17 @@ export class TrafficSim {
    * Distance along `v`'s route from the start of `steps[fromIndex]` to the
    * nearest vehicle ahead in any later lane, up to `cap` (Infinity if none).
    */
+  private followingGap(follower: MutableVehicle, leader: MutableVehicle): number {
+    return vehicleFollowingGap(follower.kind, leader.kind, this.geometry)
+  }
+
   private gapAhead(v: MutableVehicle, fromIndex: number, cap: number): number {
     let dist = 0
     for (let k = fromIndex; k < v.steps.length && dist < cap; k++) {
       const step = v.steps[k]!
       const lane = this.lanes.get(laneKey(step))
       const rear = lane?.[lane.length - 1]
-      if (rear && rear !== v) return dist + rear.progress
+      if (rear && rear !== v) return dist + rear.progress - this.followingGap(v, rear)
       const edge = this.graph.getEdge(step.edge)
       if (!edge) return Infinity
       dist += edge.length
@@ -664,7 +712,7 @@ export class TrafficSim {
   private frontLimit(v: MutableVehicle, length: number): number {
     // Driving to its exit portal: nothing ahead along the route.
     const exiting = v.stepIndex + 1 >= v.steps.length
-    let limit = exiting ? Infinity : length + this.gapAhead(v, v.stepIndex + 1, this.minGap) - this.minGap
+    let limit = exiting ? Infinity : length + this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry))
     return Math.min(limit, this.stopLineLimit(v, length))
   }
 
@@ -685,7 +733,7 @@ export class TrafficSim {
     if (!edge || edge.blocked) return false
     const lane = this.lanes.get(laneKey(next))
     if (lane && lane.length >= edge.capacity) return false
-    return this.gapAhead(v, v.stepIndex + 1, this.minGap) >= this.minGap - 1e-9
+    return this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) >= -1e-9
   }
 
   private updateJunctions(): void {
@@ -741,20 +789,22 @@ export class TrafficSim {
       const nextEdge = this.graph.getEdge(next.edge)
       const nextLane = this.lanes.get(laneKey(next))
       if (!nextEdge || nextEdge.blocked || (nextLane && nextLane.length >= nextEdge.capacity)) continue
-      const clear = this.minGap + this.stopDistanceAt(next.edge, next.from)
-      if (this.gapAhead(v, v.stepIndex + 1, clear) < clear - 1e-9) continue
+      const clear = this.stopDistanceAt(next.edge, next.from)
+      if (this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) < clear - 1e-9) continue
       this.junctionHolder.set(key, v.id)
       v.holding = key
       if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
     }
   }
 
-  private hasRoomAtEntry(step: RouteStep): boolean {
+  private hasRoomAtEntry(step: RouteStep, kind: VehicleClass): boolean {
     const edge = this.graph.getEdge(step.edge)
     if (!edge || edge.blocked) return false
     const lane = this.lanes.get(laneKey(step))
     if (!lane || lane.length === 0) return true
-    return lane.length < edge.capacity && lane[lane.length - 1]!.progress >= this.minGap - 1e-9
+    const rear = lane[lane.length - 1]!
+    const candidate: MutableVehicle = { ...rear, kind }
+    return lane.length < edge.capacity && rear.progress >= this.followingGap(candidate, rear) - 1e-9
   }
 
   /**
@@ -772,8 +822,9 @@ export class TrafficSim {
       const destination = others[Math.floor(this.random.next() * others.length)]!
       const result = findRoute(this.graph, origin, destination)
       if (!result.ok || result.route.steps.length === 0) return 'unroutable'
-      if (this.hasRoomAtEntry(result.route.steps[0]!) && this.portalClear(origin)) {
-        this.spawnVehicle(origin, destination, result.route.steps)
+      const kind = this.chooseVehicleClass()
+      if (this.hasRoomAtEntry(result.route.steps[0]!, kind) && this.portalClear(origin)) {
+        this.spawnVehicle(origin, destination, result.route.steps, kind)
         return 'spawned'
       }
     }
@@ -809,9 +860,17 @@ export class TrafficSim {
     return true
   }
 
-  private spawnVehicle(origin: NodeId, destination: NodeId, route: readonly RouteStep[]): void {
+  private chooseVehicleClass(): VehicleClass {
+    const roll = this.random.next()
+    if (roll < this.vehicleMix.car) return 'car'
+    if (roll < this.vehicleMix.car + this.vehicleMix.van) return 'van'
+    return 'truck'
+  }
+
+  private spawnVehicle(origin: NodeId, destination: NodeId, route: readonly RouteStep[], kind: VehicleClass): void {
     const v: MutableVehicle = {
       id: this.nextId++,
+      kind,
       origin,
       destination,
       steps: [...route],
@@ -871,4 +930,19 @@ export function miterOffset(a: Point | undefined, b: Point | undefined, d: numbe
   const denom = 1 + na.x * nb.x + na.y * nb.y
   if (denom < 0.25) return { x: nb.x * d, y: nb.y * d }
   return { x: ((na.x + nb.x) * d) / denom, y: ((na.y + nb.y) * d) / denom }
+}
+
+
+function normalizeVehicleMix(mix: Partial<VehicleMix> = {}): VehicleMix {
+  const values: VehicleMix = {
+    car: mix.car ?? DEFAULT_VEHICLE_MIX.car,
+    van: mix.van ?? DEFAULT_VEHICLE_MIX.van,
+    truck: mix.truck ?? DEFAULT_VEHICLE_MIX.truck,
+  }
+  for (const [kind, weight] of Object.entries(values)) {
+    if (!Number.isFinite(weight) || weight < 0) throw new RangeError(`vehicle mix ${kind} must be a non-negative number`)
+  }
+  const total = values.car + values.van + values.truck
+  if (!(total > 0)) throw new RangeError('vehicle mix must contain a positive weight')
+  return Object.freeze({ car: values.car / total, van: values.van / total, truck: values.truck / total })
 }

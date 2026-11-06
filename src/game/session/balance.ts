@@ -3,6 +3,7 @@
  * Keep every gameplay coefficient here rather than in simulation code.
  */
 import { DEFAULT_CONFIG } from '../config'
+import type { VehicleMix } from '../sim/traffic'
 
 export interface BalanceConfig {
   // Level progression
@@ -20,8 +21,13 @@ export interface BalanceConfig {
   /** Extra starting vehicles per level after the first. */
   readonly startingVehiclesPerLevel: number
   readonly maxVehicles: number
+  /** Additional active-vehicle capacity per level. */
+  readonly maxVehiclesPerLevel: number
   /** Seconds an intersection stays occupied after each crossing vehicle. */
   readonly junctionClearSec: number
+  readonly vehicleMix: VehicleMix
+  readonly vansPerLevel: number
+  readonly trucksPerLevel: number
 
   // Congestion model (all rates in percentage points)
   /** A vehicle counts as blocked once it has waited this long without moving. */
@@ -60,7 +66,11 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   startingVehicles: DEFAULT_CONFIG.startingVehicles,
   startingVehiclesPerLevel: 2,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
+  maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
+  vehicleMix: Object.freeze({ car: 1, van: 0, truck: 0 }),
+  vansPerLevel: 0.015,
+  trucksPerLevel: 0.008,
 
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
@@ -76,10 +86,14 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
 })
 
 export function createBalance(overrides: Partial<BalanceConfig> = {}): BalanceConfig {
-  const b = { ...DEFAULT_BALANCE, ...overrides }
+  const b = { ...DEFAULT_BALANCE, ...overrides, vehicleMix: { ...DEFAULT_BALANCE.vehicleMix, ...overrides.vehicleMix } }
   for (const [key, value] of Object.entries(b)) {
-    if (!Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
+    if (key === 'vehicleMix') continue
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
   }
+  const mix = b.vehicleMix
+  if (!mix || [mix.car, mix.van, mix.truck].some((n) => !Number.isFinite(n) || n < 0) ||
+      mix.car + mix.van + mix.truck <= 0) throw new RangeError('vehicleMix must contain non-negative weights with a positive total')
   if (!(b.levelDurationSec > 0)) throw new RangeError('levelDurationSec must be positive')
   if (!(b.minSpawnIntervalSec > 0)) throw new RangeError('minSpawnIntervalSec must be positive')
   if (b.blockedTolerance >= 1) throw new RangeError('blockedTolerance must be below 1')
@@ -101,6 +115,18 @@ export function spawnIntervalAt(balance: BalanceConfig, level: number, elapsedSe
   const progress = Math.min(1, Math.max(0, elapsedSec / balance.levelDurationSec))
   const interval = start * (1 - (1 - balance.inLevelRampFactor) * progress)
   return Math.max(balance.minSpawnIntervalSec, interval)
+}
+
+/** Normalized class mix for a level; heavier traffic grows at a controlled rate. */
+export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix {
+  const van = Math.min(0.45, balance.vehicleMix.van + balance.vansPerLevel * Math.max(0, level - 1))
+  const truck = Math.min(0.3, balance.vehicleMix.truck + balance.trucksPerLevel * Math.max(0, level - 1))
+  const car = Math.max(0, 1 - van - truck)
+  return { car, van, truck }
+}
+
+export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
+  return Math.min(200, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {

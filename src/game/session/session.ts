@@ -19,7 +19,7 @@ import { DEFAULT_CONFIG } from '../config'
 import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from '../roads'
 import { FixedStepClock, TrafficSim } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
-import { createBalance, spawnIntervalAt, startingVehiclesFor, type BalanceConfig } from './balance'
+import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
@@ -288,10 +288,11 @@ export class GameSession {
       portals: world.portals.map((p) => p.nodeId),
       random: createRng(mixSeed(worldSeed, 0x7a11)),
       startingVehicles: startingVehiclesFor(this.balance, level),
-      maxVehicles: this.balance.maxVehicles,
+      maxVehicles: maxVehiclesFor(this.balance, level),
       spawnIntervalSec: spawnIntervalAt(this.balance, level, 0),
       minSpawnIntervalSec: this.balance.minSpawnIntervalSec,
       junctionClearSec: this.balance.junctionClearSec,
+      vehicleMix: vehicleMixFor(this.balance, level),
     })
     return { world, graph, sim }
   }
