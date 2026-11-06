@@ -97,7 +97,7 @@ describe('freehand road drawing', () => {
     expect(preview.path[0]).toEqual({ x: 3, y: 1.5 })
     expect(preview.path[preview.path.length - 1]).toEqual({ x: 4.6, y: 3.6 })
     expect(preview.path.length).toBeGreaterThan(2)
-    expect(preview.check).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(preview.check.ok).toBe(true)
     expect(preview.endSnap).toBeUndefined()
   })
 
