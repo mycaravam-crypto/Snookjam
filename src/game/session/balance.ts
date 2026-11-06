@@ -21,6 +21,8 @@ export interface BalanceConfig {
   /** Extra starting vehicles per level after the first. */
   readonly startingVehiclesPerLevel: number
   readonly maxVehicles: number
+  /** Additional active-vehicle capacity per level. */
+  readonly maxVehiclesPerLevel: number
   /** Seconds an intersection stays occupied after each crossing vehicle. */
   readonly junctionClearSec: number
   readonly vehicleMix: VehicleMix
@@ -64,6 +66,7 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   startingVehicles: DEFAULT_CONFIG.startingVehicles,
   startingVehiclesPerLevel: 2,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
+  maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
   vehicleMix: Object.freeze({ car: 0.78, van: 0.18, truck: 0.04 }),
   vansPerLevel: 0.025,
@@ -120,6 +123,10 @@ export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix
   const truck = Math.min(0.3, balance.vehicleMix.truck + balance.trucksPerLevel * Math.max(0, level - 1))
   const car = Math.max(0, 1 - van - truck)
   return { car, van, truck }
+}
+
+export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
+  return Math.min(200, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
