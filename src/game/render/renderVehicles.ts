@@ -1,5 +1,5 @@
 import type { TrafficSim, Vehicle, VehicleState } from '../sim/traffic'
-import { worldToScreen, type Viewport } from '../world/viewport'
+import { screenAngle, worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
 import { COLORS } from './palette'
 
@@ -33,7 +33,7 @@ export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport
     const x = position.x - Math.sin(heading) * LANE_OFFSET
     const y = position.y + Math.cos(heading) * LANE_OFFSET
     const p = worldToScreen(v, { x, y })
-    drawCar(ctx, vehicle, p.x, p.y, heading, length, width)
+    drawCar(ctx, vehicle, p.x, p.y, screenAngle(v, heading), length, width)
   }
   ctx.restore()
 }

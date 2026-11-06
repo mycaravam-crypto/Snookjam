@@ -58,3 +58,20 @@ describe('renderWorld', () => {
     expect(JSON.stringify(world)).toBe(before)
   })
 })
+
+describe('renderWorld on a rotated viewport', () => {
+  it('keeps every terrain tile inside a portrait canvas', () => {
+    const world = generateWorld(77)
+    const { ctx, calls } = recordingContext()
+    const v = fitViewport(world.width, world.height, 390, 750, 8, { rotateIfLargerBy: 1.15 })
+    expect(v.rotation).toBe(1)
+    renderWorld(ctx, world, v)
+    for (const c of calls.filter((c) => c.name === 'fillRect').slice(1)) {
+      const [x, y] = c.args as number[]
+      expect(x).toBeGreaterThanOrEqual(-1)
+      expect(y).toBeGreaterThanOrEqual(-1)
+      expect(x!).toBeLessThanOrEqual(390)
+      expect(y!).toBeLessThanOrEqual(750)
+    }
+  })
+})

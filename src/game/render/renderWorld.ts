@@ -1,5 +1,5 @@
 import type { Point, World } from '../world/types'
-import { worldToScreen, type Viewport } from '../world/viewport'
+import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
 import { COLORS, TERRAIN_COLORS } from './palette'
 
@@ -52,7 +52,7 @@ export function renderWorld(
 
   drawTerrain(ctx, world, viewport)
   drawRoads(ctx, world, viewport)
-  drawSettlements(ctx, world, viewport, options.labels !== false && s >= 14)
+  drawSettlements(ctx, world, viewport, options.labels !== false && s >= 11)
   drawPortals(ctx, world, viewport)
   ctx.restore()
 }
@@ -70,8 +70,9 @@ function drawTerrain(ctx: RenderContext, world: World, v: Viewport): void {
     for (let tx = 0; tx < world.width; tx++) {
       const i = ty * world.width + tx
       const terrain = world.terrain[i]!
-      const x = v.offsetX + tx * s
-      const y = v.offsetY + ty * s
+      // Decorations below are laid out in screen space, so they stay upright
+      // whether or not the map is rotated.
+      const { x, y } = worldRectToScreen(v, tx, ty, 1, 1)
       ctx.fillStyle = TERRAIN_COLORS[terrain]
       ctx.fillRect(x, y, size, size)
       if (s < 6) continue
@@ -148,8 +149,7 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
       for (let dx = -r; dx <= r; dx++) {
         const i = (ty + dy) * world.width + tx + dx
         if (world.road[i]) continue
-        const x = v.offsetX + (tx + dx) * s
-        const y = v.offsetY + (ty + dy) * s
+        const { x, y } = worldRectToScreen(v, tx + dx, ty + dy, 1, 1)
         const inset = s * (0.18 + 0.08 * tileNoise(world, i, 4))
         ctx.fillStyle = COLORS.house
         ctx.fillRect(x + inset, y + inset, s - 2 * inset, s - 2 * inset)
@@ -158,7 +158,9 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
       }
     }
     if (labels) {
-      const p = worldToScreen(v, { x: tx + 0.5, y: ty - r - 0.15 })
+      // Above the village on screen, whatever the map rotation.
+      const centre = worldToScreen(v, { x: tx + 0.5, y: ty + 0.5 })
+      const p = { x: centre.x, y: centre.y - (r + 0.65) * s }
       ctx.font = `600 ${Math.round(Math.max(11, s * 0.55))}px system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'bottom'
@@ -175,7 +177,7 @@ function drawPortals(ctx: RenderContext, world: World, v: Viewport): void {
   const s = v.scale
   for (const portal of world.portals) {
     const m = worldToScreen(v, portal.mouth)
-    const start = { north: 0, east: Math.PI / 2, south: Math.PI, west: (3 * Math.PI) / 2 }[portal.side]
+    const start = screenAngle(v, { north: 0, east: Math.PI / 2, south: Math.PI, west: (3 * Math.PI) / 2 }[portal.side])
     // A half-disc opening facing into the map, with a stone arch.
     ctx.fillStyle = COLORS.tunnel
     ctx.beginPath()

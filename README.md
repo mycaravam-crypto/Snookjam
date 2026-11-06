@@ -64,6 +64,10 @@ or the app layer.
 - **HUD:** level, time survived out of the level target, active cars, and the
   congestion meter with its percentage and a text state (Flowing / Warning
   from 50% / Critical from 80%, which is also striped).
+- **Portrait screens:** when the screen is tall enough that a quarter turn makes
+  the map at least 15% larger, the map is drawn rotated (world north points
+  right). This is display-only: the map, seeds and rules are unchanged, and
+  pointer input is converted back to world coordinates.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
 - **Build a road:** press on an existing road, drag to another road, release.
