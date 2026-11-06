@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { RoadGraph } from '../../../src/game/roads'
 import {
   mixedVehicleMinGap,
+  vehicleFollowingGap,
   TrafficSim,
   VEHICLE_PROFILES,
   type VehicleClass,
@@ -47,8 +48,8 @@ describe('vehicle classes (#23)', () => {
 
   it('uses a conservative gap that accommodates the longest vehicle', () => {
     expect(mixedVehicleMinGap()).toBeGreaterThan(VEHICLE_PROFILES.truck.length)
-    const sim = simulation('truck')
-    expect(sim.minGap).toBeGreaterThanOrEqual(mixedVehicleMinGap())
+    expect(vehicleFollowingGap('truck', 'truck')).toBeCloseTo(mixedVehicleMinGap())
+    expect(vehicleFollowingGap('truck', 'car')).toBeGreaterThan(vehicleFollowingGap('car', 'car'))
   })
 
   it('increases van and truck shares gradually without reducing the car floor', () => {
