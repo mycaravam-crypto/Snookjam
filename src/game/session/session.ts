@@ -292,6 +292,7 @@ export class GameSession {
       spawnIntervalSec: spawnIntervalAt(this.balance, level, 0),
       minSpawnIntervalSec: this.balance.minSpawnIntervalSec,
       junctionClearSec: this.balance.junctionClearSec,
+      vehicleMix: vehicleMixFor(this.balance, level),
     })
     return { world, graph, sim }
   }
