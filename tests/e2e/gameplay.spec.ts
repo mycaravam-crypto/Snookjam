@@ -2,8 +2,8 @@
  * Browser-level tests of the critical player flow (#9), run against the
  * production build with Playwright (Chromium).
  *
- * - World points are converted to screen positions with the game's own
- *   viewport maths, so drags land exactly where a player would drag.
+ * - World points are converted to screen positions by the app itself
+ *   (`__snookjam.worldToClient`), so drags land where a player would drag.
  * - `?test` exposes the GameController as `window.__snookjam`. Tests use it
  *   to read state and to fast-forward the simulation in fixed steps instead
  *   of waiting in real time; all player actions go through the real UI.
@@ -13,9 +13,7 @@ import {
   checkConnection,
   createRoadGraph,
   findRoute,
-  fitViewport,
   generateWorld,
-  worldToScreen,
   type Point,
   type World,
 } from '../../src/game'
@@ -63,12 +61,11 @@ const world = generateWorld(SEED)
 const road = usefulRoad(world)
 const offRoad = offRoadPoint(world)
 
+/** Page client coordinates of a world point, via the app's own mapping (handles portrait rotation). */
 async function toScreen(page: Page, point: Point) {
-  const box = await page.locator('canvas').first().boundingBox()
-  if (!box) throw new Error('canvas not visible')
-  // Must match WorldCanvas: fitViewport(world size, canvas CSS size, 8 px padding).
-  const p = worldToScreen(fitViewport(world.width, world.height, box.width, box.height, 8), point)
-  return { x: box.x + p.x, y: box.y + p.y }
+  const p = await page.evaluate((pt) => (window as any).__snookjam.worldToClient(pt), point)
+  if (!p) throw new Error('canvas not ready')
+  return p as { x: number; y: number }
 }
 
 async function drag(page: Page, from: Point, to: Point) {
