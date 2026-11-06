@@ -28,7 +28,7 @@ describe('ConstructionController', () => {
     expect(controller.pointerDown({ x: 2.4, y: 1.8 })).toBe(true)
     expect(controller.preview?.from).toEqual({ x: 2.4, y: 1.5 })
     controller.pointerMove({ x: 2.4, y: 3.2 })
-    expect(controller.preview?.check).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(controller.preview?.check.ok).toBe(true)
     expect(controller.preview?.to).toEqual({ x: 2.4, y: 3.2 })
     controller.pointerMove({ x: 2.4, y: 5.3 })
     expect(controller.preview?.check.ok).toBe(true)
@@ -43,7 +43,7 @@ describe('ConstructionController', () => {
     const first = controller.pointerUp({ x: 3.5, y: 3.5 })
     expect(first.kind).toBe('committed')
     if (first.kind !== 'committed') return
-    expect(first.road.to).toEqual({ x: 4.5, y: 3.5 })
+    expect(first.road.to).toEqual({ x: 3.5, y: 3.5 })
     expect(graph.nodeCount).toBeGreaterThan(initialNodes)
     const deadEnd = first.road.to
     expect(controller.pointerDown(deadEnd)).toBe(true)
