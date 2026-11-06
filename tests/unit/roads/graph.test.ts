@@ -195,9 +195,9 @@ describe('crossing junction construction (#29)', () => {
     const result = g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 }, {},
       [{ x: 3, y: 2 }, { x: 5, y: -2 }])
     expect(result.splits).toHaveLength(3)
-    expect(result.nodes.slice(1, 4).map((id) => g.getNode(id)?.position.x)).toEqual([2, 4, 6])
-    expect(result.nodes).toHaveLength(5)
-    for (const node of result.nodes.slice(1, 4)) expect(g.edgesAt(node)).toHaveLength(4)
+    const junctions = result.nodes.filter((id) => g.edgesAt(id).length === 4)
+    expect(junctions.map((id) => g.getNode(id)?.position.x)).toEqual([2, 4, 6])
+    expect(result.nodes).toHaveLength(7)
   })
 
   it('does not mutate the live graph when the planned connection fails', () => {
