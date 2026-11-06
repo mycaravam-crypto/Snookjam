@@ -7,6 +7,7 @@ import {
   renderConstructionPreview,
   renderVehicles,
   renderWorld,
+  worldToScreen,
   snapToRoad,
   type ConstructionController,
   type ConstructionFeedback,
@@ -31,6 +32,8 @@ const props = withDefaults(
 const emit = defineEmits<{ outcome: [ConstructionOutcome] }>()
 
 const FEEDBACK_MS = 700
+/** Rotate the map only when that makes it at least this much larger. */
+const ROTATE_THRESHOLD = 1.15
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 let viewport: Viewport | undefined
@@ -48,7 +51,15 @@ let backgroundKey = ''
 function getViewport(): Viewport | undefined {
   return viewport
 }
-defineExpose({ getViewport, draw })
+/** Page client coordinates of a world point (accounts for rotation); for tests. */
+function worldToClient(point: Point): Point | undefined {
+  const el = canvas.value
+  if (!el || !viewport) return undefined
+  const rect = el.getBoundingClientRect()
+  const p = worldToScreen(viewport, point)
+  return { x: rect.left + p.x, y: rect.top + p.y }
+}
+defineExpose({ getViewport, draw, worldToClient })
 
 function draw(): void {
   frame = 0
@@ -57,7 +68,10 @@ function draw(): void {
   const width = el.clientWidth
   const height = el.clientHeight
   if (width === 0 || height === 0) return
-  viewport = fitViewport(props.world.width, props.world.height, width, height, 8)
+  // On tall (portrait) canvases, turn the map a quarter so it fills the space.
+  viewport = fitViewport(props.world.width, props.world.height, width, height, 8, {
+    rotateIfLargerBy: ROTATE_THRESHOLD,
+  })
   const dpr = window.devicePixelRatio || 1
   const pixelW = Math.round(width * dpr)
   const pixelH = Math.round(height * dpr)

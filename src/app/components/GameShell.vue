@@ -92,7 +92,11 @@ defineExpose({ game })
 
 // Test hook for browser tests (#9): always in dev, and in production only with ?test in the URL.
 if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test')) {
-  ;(window as unknown as { __snookjam?: unknown }).__snookjam = game
+  ;(window as unknown as { __snookjam?: unknown }).__snookjam = {
+    ...game,
+    /** Client coordinates of a world point on the current canvas (handles map rotation). */
+    worldToClient: (point: { x: number; y: number }) => canvas.value?.worldToClient(point),
+  }
 }
 </script>
 
