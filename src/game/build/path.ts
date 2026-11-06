@@ -27,11 +27,11 @@ export interface PathOptions {
 }
 
 export const DEFAULT_PATH_OPTIONS: PathOptions = Object.freeze({
-  sampleSpacing: 0.15,
-  resampleSpacing: 0.25,
-  smoothingPasses: 3,
-  simplifyTolerance: 0.2,
-  minSegmentLength: 0.5,
+  sampleSpacing: 0.08,
+  resampleSpacing: 0.15,
+  smoothingPasses: 1,
+  simplifyTolerance: 0.08,
+  minSegmentLength: 0.2,
 })
 
 /** Appends `point` to `samples` unless it is within `spacing` of the last sample. Returns whether it was added. */
