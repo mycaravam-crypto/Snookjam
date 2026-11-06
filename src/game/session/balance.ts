@@ -89,7 +89,7 @@ export function createBalance(overrides: Partial<BalanceConfig> = {}): BalanceCo
   const b = { ...DEFAULT_BALANCE, ...overrides }
   for (const [key, value] of Object.entries(b)) {
     if (key === 'vehicleMix') continue
-    if (!Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
   }
   const mix = b.vehicleMix
   if (!mix || [mix.car, mix.van, mix.truck].some((n) => !Number.isFinite(n) || n < 0) ||
