@@ -37,8 +37,10 @@ npm run dev     # start the Vite dev server at http://localhost:5173
 src/
   main.ts        App entry point: mounts Vue
   app/           Vue UI: components, styles. May import from src/game.
-  game/          Framework-independent game logic (config, and later world,
-                 routing, simulation). Must not import Vue, the DOM or src/app.
+  game/          Framework-independent game logic. Must not import Vue or src/app.
+    config.ts    MVP tuning defaults
+    world/       World model, seeded generation, viewport (world↔screen) maths
+    render/      Canvas 2D drawing through an injected context
 tests/
   unit/          Vitest tests for UI and game logic
 ```
@@ -46,6 +48,30 @@ tests/
 The `@app/*` and `@game/*` import aliases point at `src/app` and `src/game`.
 A test in `tests/unit/architecture.test.ts` fails if game logic imports Vue
 or the app layer.
+
+## World and maps
+
+Maps are generated from a seed: the same seed always gives the same map.
+Open `/?seed=1234` (any number or text) to load a specific map; otherwise a
+random seed is used and shown in the header. "New map" picks a new one.
+
+- **Coordinates.** World units are tiles. Tile `(tx, ty)` covers
+  `[tx, tx+1) × [ty, ty+1)`; its centre is `(tx + 0.5, ty + 0.5)`. The
+  viewport (`fitViewport`, `worldToScreen`, `screenToWorld`) maps world
+  units to CSS pixels and is recomputed on resize without touching the world.
+- **Terrain.** Grass, field, forest, water and settlement tiles from seeded
+  value noise. Water is impassable.
+- **Settlements and portals.** Five 3 × 3 settlements away from water; four
+  tunnel portals on the map edges, one per side.
+- **Roads.** A minimum spanning tree over settlements and portals, each edge
+  routed with grid A* (forest costs more, existing roads cost less so routes
+  merge, water is impassable). The road tiles are converted to a
+  `RoadLayout`: nodes (junctions, dead ends, settlements, portals) and
+  segments (polylines with a length in tiles) for the road graph.
+- **Fallback.** If water makes a map unconnectable, generation retries with
+  derived seeds (`maxAttempts`, default 8). If all fail, it generates the map
+  without water, which is always connectable. `world.generation` records
+  the attempts and whether the fallback was used.
 
 ## Tech stack
 

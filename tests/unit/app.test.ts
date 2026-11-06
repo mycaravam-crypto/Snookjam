@@ -15,7 +15,18 @@ describe('App entry point', () => {
     expect(wrapper.find('[data-testid="game-shell"]').exists()).toBe(true)
     expect(wrapper.find('canvas').exists()).toBe(true)
 
-    await wrapper.find('.hud button').trigger('click')
+    await wrapper.find('.hud .back').trigger('click')
     expect(wrapper.find('[data-testid="game-shell"]').exists()).toBe(false)
+  })
+})
+
+describe('game shell world', () => {
+  it('generates the map from the ?seed= URL parameter', async () => {
+    window.history.replaceState(null, '', '/?seed=4242')
+    const wrapper = mount(App)
+    await wrapper.find('[data-testid="play"]').trigger('click')
+    expect(wrapper.find('[data-testid="seed"]').text()).toBe('Seed 4242')
+    expect(wrapper.find('canvas').attributes('aria-label')).toContain('4242')
+    window.history.replaceState(null, '', '/')
   })
 })
