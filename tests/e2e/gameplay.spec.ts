@@ -159,8 +159,8 @@ const graphInfo = (page: Page) =>
     return { edges: g.edgeCount, version: g.version, maxEdge: Math.max(...g.edges().map((e: any) => e.id)) }
   })
 
-async function play(page: Page) {
-  await page.goto(URL)
+async function play(page: Page, url = URL) {
+  await page.goto(url)
   await page.getByTestId('play').click()
   await expect(page.getByTestId('game-shell')).toBeVisible()
 }
@@ -308,8 +308,16 @@ test.describe('critical player flow', () => {
   })
 })
 
+/**
+ * With two-lane spacing and junction boxes (#22), 40 x 30 maps hold roughly
+ * 40-90 vehicles at once depending on their road network. Seed 36 has room
+ * for about 90; the 100-vehicle simulation cost is covered on a larger map in
+ * tests/integration/gameplay.test.ts.
+ */
+const PERF_URL = '?seed=36&test'
+
 test('stays responsive with about 100 active vehicles', async ({ page }) => {
-  await play(page)
+  await play(page, PERF_URL)
   // Fill the map, holding congestion at 0 so the run keeps going.
   await page.evaluate(() => {
     const s = (window as any).__snookjam.session.value

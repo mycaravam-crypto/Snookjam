@@ -1,6 +1,7 @@
 import type { Point, World } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
+import { CENTRE_LINE_WIDTH, ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH } from './roadStyle'
 import { COLORS, FONT_FAMILY, TERRAIN_COLORS } from './palette'
 
 /** The subset of CanvasRenderingContext2D the world renderer uses. */
@@ -117,8 +118,8 @@ function drawRoads(ctx: RenderContext, world: World, v: Viewport): void {
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   const passes: [string, number][] = [
-    [COLORS.roadEdge, 0.62],
-    [COLORS.road, 0.48],
+    [COLORS.roadEdge, ROAD_EDGE_WIDTH],
+    [COLORS.road, ROAD_SURFACE_WIDTH],
   ]
   for (const [color, width] of passes) {
     ctx.strokeStyle = color
@@ -130,7 +131,7 @@ function drawRoads(ctx: RenderContext, world: World, v: Viewport): void {
   }
   if (s >= 10) {
     ctx.strokeStyle = COLORS.roadMarking
-    ctx.lineWidth = Math.max(1, s * 0.05)
+    ctx.lineWidth = Math.max(1, s * CENTRE_LINE_WIDTH)
     ctx.setLineDash([s * 0.25, s * 0.25])
     for (const points of lines) {
       tracePolyline(ctx, v, points)

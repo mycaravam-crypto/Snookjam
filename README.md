@@ -89,10 +89,27 @@ or the app layer.
 - A road is rejected if it does not start and end on the network, is shorter
   than one tile, duplicates or runs along an existing road, crosses water or
   leaves the map, crosses another road anywhere except at its ends, crosses
-  itself, or has a bend within ½ a tile of another road.
+  itself, passes closer than one road width to a road it does not join, or
+  meets a road at less than 60° (two-lane roads need room, #22).
 - New roads join the road graph immediately and atomically (a rejected road
   changes nothing), splitting the roads they attach to, so later route
   queries can use them. Vehicles re-plan at their next junction.
+
+## Roads and traffic
+
+Every road is a classic two-lane road: one lane per direction, driving on the
+right, with a dashed centre line. Dimensions live in `src/game/sim/lanes.ts`
+(`ROAD_GEOMETRY`) and are shared by the simulation, road building and drawing:
+lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
+
+- Vehicles keep to their lane and pass oncoming traffic without touching.
+  `sim.lanePositionOf(vehicle)` gives the in-lane position; vehicles follow a
+  short curve through bends and turns, so they never jump lanes.
+- Following distance (1.24 tiles) is kept per lane and across nodes.
+- Intersections have a stop line and a junction box that one vehicle holds at
+  a time, entering only when it has room to leave. Intersections too close to
+  stop between them share one box, so they cannot deadlock. Tunnels where two
+  or more roads meet work the same way.
 
 ## World and maps
 
@@ -174,12 +191,12 @@ peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
   road graph and routing, traffic, construction, congestion and lifecycle.
 - **Integration tests** (`tests/integration`) run the whole game logic
   together with fixed seeds and fixed 50 ms steps, with no wall-clock timing.
-  The core scenario uses seed 77, level 3. Without player roads the level is
-  lost (congestion reaches 100 % at 166 s). A single road from (23.5, 7.5) to
-  (22.5, 13.5), built 12 s in, completes the level with congestion peaking
-  around 21 %, and more vehicles leave the map. If generation or balance
-  changes, find a new relieving road by trying every valid single road on a
-  map that is lost without help.
+  The core scenario uses seed 9, level 3. Without player roads the level is
+  lost (congestion reaches 100 % at 164 s). A single road from (8.5, 4.5) to
+  (1.5, 8.5), built 12 s in, completes the level with congestion peaking
+  around 76 %, and more vehicles leave the map. If generation, traffic rules
+  or balance change, find a new relieving road by trying every valid single
+  road on a map that is lost without help.
 - **Browser tests** (`tests/e2e`) start the production build with
   `vite preview` and drive Chromium through Playwright along the critical
   flow: start screen → Play → map and moving vehicles → congestion rises

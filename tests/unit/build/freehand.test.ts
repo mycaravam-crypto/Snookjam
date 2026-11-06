@@ -21,15 +21,20 @@ function setup(options = constructionOptions()) {
   return { world, graph, controller: new ConstructionController(world, graph, options) }
 }
 
-/** A curve from the top road down past the pond to the bottom road. */
+/**
+ * A curve from the top road down past the pond to the bottom road. Two-lane
+ * roads (#22) are 0.76 tiles wide and must keep a road width from roads they
+ * do not join, so below the pond the curve runs in the narrow band between
+ * the pond (y 4) and the bottom road's clearance (y 4.74).
+ */
 const CURVE: Point[] = [
   { x: 3.2, y: 2.4 },
-  { x: 3.6, y: 3.2 },
-  { x: 4.3, y: 4.0 },
-  { x: 5.2, y: 4.5 },
-  { x: 6.3, y: 4.6 },
-  { x: 7.3, y: 4.6 },
-  { x: 8.0, y: 4.8 },
+  { x: 3.5, y: 3.3 },
+  { x: 3.9, y: 4.25 },
+  { x: 4.8, y: 4.62 },
+  { x: 6.0, y: 4.62 },
+  { x: 7.0, y: 4.6 },
+  { x: 7.6, y: 4.7 },
 ]
 
 function draw(controller: ConstructionController, start: Point, trace: Point[], end: Point) {
@@ -49,7 +54,7 @@ describe('freehand road drawing', () => {
   it('commits a visibly non-straight road that follows the drawn trajectory', () => {
     const { controller, graph } = setup()
     const nodes = graph.nodeCount
-    const outcome = draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 8.3, y: 5.3 })
+    const outcome = draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 7.8, y: 5.3 })
     expect(outcome.kind).toBe('committed')
     if (outcome.kind !== 'committed') return
     const { points } = outcome.road
@@ -73,10 +78,12 @@ describe('freehand road drawing', () => {
   it('previews the smoothed trajectory while drawing', () => {
     const { controller } = setup()
     controller.pointerDown({ x: 3, y: 1.7 })
-    for (const p of CURVE.slice(0, 3)) controller.pointerMove(p)
+    // Stop short of the bottom road's snap range.
+    for (const p of CURVE.slice(0, 2)) controller.pointerMove(p)
+    controller.pointerMove({ x: 4.6, y: 3.6 })
     const preview = controller.preview!
     expect(preview.path[0]).toEqual({ x: 3, y: 1.5 })
-    expect(preview.path[preview.path.length - 1]).toEqual(CURVE[2])
+    expect(preview.path[preview.path.length - 1]).toEqual({ x: 4.6, y: 3.6 })
     expect(preview.path.length).toBeGreaterThan(2)
     expect(preview.check).toMatchObject({ ok: false, reason: 'not-connected' })
     expect(preview.endSnap).toBeUndefined()
@@ -87,12 +94,12 @@ describe('freehand road drawing', () => {
     controller.pointerDown({ x: 3, y: 1.7 })
     controller.pointerMove(CURVE)
     expect(controller.preview!.path.length).toBeGreaterThan(2)
-    expect(controller.pointerUp({ x: 8.3, y: 5.3 }).kind).toBe('committed')
+    expect(controller.pointerUp({ x: 7.8, y: 5.3 }).kind).toBe('committed')
   })
 
   it('makes the new road available to route queries', () => {
     const { controller, graph } = setup()
-    const outcome = draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 8.3, y: 5.3 })
+    const outcome = draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 7.8, y: 5.3 })
     if (outcome.kind !== 'committed') throw new Error('expected a road')
     const [start, end] = [outcome.result.nodes[0]!, outcome.result.nodes[outcome.result.nodes.length - 1]!]
     const found = findRoute(graph, start, end)
@@ -112,21 +119,27 @@ describe('generous snapping', () => {
 
   it('snaps both ends onto road segments, not only to junctions', () => {
     const { controller } = setup()
-    const outcome = draw(controller, { x: 3.4, y: 2.4 }, CURVE, { x: 7.6, y: 4.5 })
+    const outcome = draw(controller, { x: 3.4, y: 2.4 }, CURVE, { x: 7.8, y: 4.6 })
     expect(outcome.kind).toBe('committed')
     if (outcome.kind !== 'committed') return
     expect(outcome.road.from).toEqual({ x: 3.4, y: 1.5 })
-    expect(outcome.road.to).toEqual({ x: 7.6, y: 5.5 })
+    expect(outcome.road.to).toEqual({ x: 7.8, y: 5.5 })
     // Both ends were mid-edge, so both existing edges were split.
     expect(outcome.result.splits).toHaveLength(2)
   })
 
   it('snaps to a junction when the end is near one', () => {
     const { world, graph } = setup()
-    const check = checkPath(world, graph, { x: 3, y: 1.6 }, { x: 9.3, y: 5.2 }, CURVE)
+    // The loop's dead end at (1.5, 5.5). (Its inner corners cannot be joined:
+    // no direction is 60 degrees from both roads there, #22.)
+    const check = checkPath(world, graph, { x: 3, y: 1.6 }, { x: 1.7, y: 5.3 }, [
+      { x: 2.9, y: 2.6 },
+      { x: 2.5, y: 3.5 },
+      { x: 2.0, y: 4.4 },
+    ])
     expect(check.ok).toBe(true)
     expect(check.to?.location.kind).toBe('node')
-    expect(check.to?.position).toEqual({ x: 9.5, y: 5.5 })
+    expect(check.to?.position).toEqual({ x: 1.5, y: 5.5 })
   })
 
   it('updates the snap continuously while drawing', () => {
@@ -229,7 +242,7 @@ describe('freehand validation', () => {
     const controller = new ConstructionController(world, graph, undefined, () => {
       throw new Error('game over')
     })
-    expect(draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 8.3, y: 5.3 })).toMatchObject({
+    expect(draw(controller, { x: 3, y: 1.7 }, CURVE, { x: 7.8, y: 5.3 })).toMatchObject({
       kind: 'rejected',
       reason: 'build-failed',
     })

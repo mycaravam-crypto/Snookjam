@@ -87,6 +87,23 @@ describe('checkConnection', () => {
     })
   })
 
+  it('rejects a road that meets another at a very sharp angle (#22)', () => {
+    const { world, graph } = setup()
+    // Leaves the bottom road's end at about 53 degrees to it (minimum is 60).
+    expect(checkConnection(world, graph, { x: 1.5, y: 5.5 }, { x: 4.5, y: 1.5 })).toMatchObject({ reason: 'too-sharp' })
+  })
+
+  it('rejects a road that runs too close to another road (#22)', () => {
+    const { world, graph } = setup()
+    const first = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 5.5 })
+    expect(first.ok).toBe(true)
+    if (first.ok) graph.connect(first.from.location, first.to.location)
+    // Parallel to the new road, half a tile away: the two-lane surfaces would overlap.
+    expect(checkConnection(world, graph, { x: 3.1, y: 1.5 }, { x: 3.1, y: 5.5 })).toMatchObject({ reason: 'too-close' })
+    // A road-width and a bit away is fine.
+    expect(checkConnection(world, graph, { x: 3.9, y: 1.5 }, { x: 3.9, y: 5.5 }).ok).toBe(true)
+  })
+
   it('does not mutate the graph', () => {
     const { world, graph } = setup()
     const version = graph.version

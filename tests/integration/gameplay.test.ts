@@ -3,17 +3,26 @@
  * road graph, routing, traffic, player construction and congestion working
  * together under fixed seeds and fixed steps (no wall-clock timing).
  *
- * Scenario: seed 77, level 3. Without player roads, the level is lost before
- * the 180 s target. One road from (23.5, 7.5) to (22.5, 13.5), built 12 s
- * into the level, relieves the bottleneck and the level is completed. This
- * scenario was found by trying every valid single road on that map; if world
- * generation or balance changes, re-run that search and update it.
+ * Scenario: seed 9, level 3. Without player roads, the level is lost before
+ * the 180 s target (at 164 s). One road from (8.5, 4.5) to (1.5, 8.5), built
+ * 12 s into the level, relieves the bottleneck and the level is completed
+ * (congestion peaks around 76 %). This scenario was found by trying every
+ * valid single straight road between road tiles 3-10 tiles apart; if world
+ * generation, traffic rules or balance change, re-run that search and update
+ * it. (Seed 77 was used until two-lane junction rules, #22, changed it.)
  */
 import { describe, expect, it } from 'vitest'
 import { ConstructionController, GameSession, type SessionEvent } from '../../src/game'
 
-const SEED = 77
-const ROAD = { from: { x: 23.5, y: 7.5 }, to: { x: 22.5, y: 13.5 } }
+const SEED = 9
+const ROAD = { from: { x: 8.5, y: 4.5 }, to: { x: 1.5, y: 8.5 } }
+/**
+ * Map for the performance check (independent of the scenario). With two-lane
+ * spacing and junction boxes (#22) a 40 x 30 map holds about 80 vehicles at
+ * once, so the 100-vehicle check uses a larger map.
+ */
+const PERF_SEED = 77
+const PERF_WORLD = { width: 56, height: 42 }
 const BUILD_AT_SEC = 12
 const DT = 1 / 20
 
@@ -51,7 +60,7 @@ function buildRoad(s: GameSession) {
   return outcome.result
 }
 
-describe('gameplay integration (seed 77)', () => {
+describe(`gameplay integration (seed ${SEED})`, () => {
   it('generates a playable map whose portals are all connected', () => {
     const s = new GameSession({ seed: SEED })
     expect(s.world.portals.length).toBeGreaterThanOrEqual(2)
@@ -130,7 +139,11 @@ describe('gameplay integration (seed 77)', () => {
 
 describe('simulation performance at the MVP target scale', () => {
   it('steps 100 active vehicles on a generated map well within the 50 ms frame budget', () => {
-    const s = new GameSession({ seed: SEED, balance: { startingVehicles: 100, baseSpawnIntervalSec: 0.8, levelStartGraceSec: 1e9 } })
+    const s = new GameSession({
+      seed: PERF_SEED,
+      world: PERF_WORLD,
+      balance: { startingVehicles: 100, baseSpawnIntervalSec: 0.5, levelStartGraceSec: 1e9 },
+    })
     s.start()
     for (let i = 0; i < 60 / DT; i++) s.tick(DT) // fill the map
     const active = s.snapshot().activeVehicles
