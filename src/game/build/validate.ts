@@ -87,7 +87,7 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
 }
 
 export type ConnectionCheck =
-  | { readonly ok: true; readonly from: NearestLocation; readonly to?: NearestLocation }
+  | { readonly ok: true; readonly from: NearestLocation; readonly to: NearestLocation }
   | {
       readonly ok: false
       readonly reason: RejectionReason
@@ -131,6 +131,7 @@ export function checkConnection(
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
 ): ConnectionCheck {
   const { path: _path, ...check } = checkPath(world, graph, start, end, [], options)
+  if (check.ok && !check.to) return { ok: false, reason: 'not-connected', from: check.from }
   return check as ConnectionCheck
 }
 
