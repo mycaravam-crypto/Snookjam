@@ -220,6 +220,9 @@ export class TrafficSim {
     this.pending = Math.min(options.startingVehicles ?? DEFAULT_CONFIG.startingVehicles, this.maxPendingSpawns)
     if (!(this.minGap > 0)) throw new RangeError('minGap must be positive')
     validateRoadGeometry(this.geometry, this.minGap)
+    if (this.minGap < mixedVehicleMinGap(this.geometry) - 1e-9) {
+      throw new RangeError(`minGap must be at least ${mixedVehicleMinGap(this.geometry)} for mixed vehicle classes`)
+    }
     this.stopDistance = junctionStopDistance(this.geometry)
     this.setSpawnInterval(this.spawnInterval)
   }
