@@ -39,8 +39,8 @@ describe('ConstructionController', () => {
     const { controller, graph } = setup()
     const initialNodes = graph.nodeCount
     controller.pointerDown({ x: 2.5, y: 1.5 })
-    controller.pointerMove({ x: 3.5, y: 2.5 })
-    const first = controller.pointerUp({ x: 4.5, y: 3.5 })
+    controller.pointerMove({ x: 3, y: 2.5 })
+    const first = controller.pointerUp({ x: 3.5, y: 3.5 })
     expect(first.kind).toBe('committed')
     if (first.kind !== 'committed') return
     expect(first.road.to).toEqual({ x: 4.5, y: 3.5 })
