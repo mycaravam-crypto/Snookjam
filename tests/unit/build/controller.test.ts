@@ -35,6 +35,22 @@ describe('ConstructionController', () => {
     expect(controller.preview?.to).toEqual({ x: 2.4, y: 5.5 })
   })
 
+  it('allows a road to end on open terrain and extends that dead end later', () => {
+    const { controller, graph } = setup()
+    const initialNodes = graph.nodeCount
+    controller.pointerDown({ x: 2.5, y: 1.5 })
+    controller.pointerMove({ x: 3.5, y: 2.5 })
+    const first = controller.pointerUp({ x: 4.5, y: 3.5 })
+    expect(first.kind).toBe('committed')
+    if (first.kind !== 'committed') return
+    expect(first.road.to).toEqual({ x: 4.5, y: 3.5 })
+    expect(graph.nodeCount).toBeGreaterThan(initialNodes)
+    const deadEnd = first.road.to
+    expect(controller.pointerDown(deadEnd)).toBe(true)
+    const second = controller.pointerUp({ x: 5.5, y: 4.5 })
+    expect(second.kind).toBe('committed')
+  })
+
   it('commits exactly one connection on a valid pointer-up', () => {
     const { controller, graph } = setup()
     const edges = graph.edgeCount
