@@ -9,3 +9,4 @@
 export * from './clock'
 export * from './traffic'
 export * from './lanes'
+export * from './vehicleClasses'
