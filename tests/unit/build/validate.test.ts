@@ -19,7 +19,7 @@ describe('checkConnection', () => {
     const check = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 6, y: 3.5 })
     expect(check.ok).toBe(true)
     if (check.ok) expect(check.to.position.x).toBeCloseTo(7.5)
-    expect(checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 5.4, y: 3.5 })).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 5.4, y: 3.5 }, constructionOptions({ endSnapDistance: 1.4 }))).toMatchObject({ ok: false, reason: 'not-connected' })
     expect(checkConnection(world, graph, { x: 4.5, y: 3 }, { x: 7.5, y: 5.5 })).toMatchObject({ ok: false, reason: 'not-on-road' })
   })
 
