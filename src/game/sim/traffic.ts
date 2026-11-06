@@ -19,7 +19,9 @@
  *   the gap ahead is at least `minGap`; otherwise it waits, which is how
  *   queues form.
  * - Intersections (nodes where three or more roads meet) have a stop line
- *   `stopDistance` before the node and a junction box: one vehicle at a time
+ *   `stopDistance` before the node (further back where roads meet at a sharp
+ *   angle, or at a bend sharper than a right angle, which also counts as a
+ *   junction) and a junction box: one vehicle at a time
  *   holds the box, from crossing its stop line until it is `stopDistance`
  *   past the node, and only enters when it has room to leave. Intersections
  *   joined by a road too short to stop between them share one box. A new vehicle
@@ -142,7 +144,7 @@ export class TrafficSim {
   readonly maxPendingSpawns: number
   readonly junctionClearSec: number
   readonly geometry: RoadGeometry
-  /** Distance before an intersection where vehicles stop (vehicle centre). */
+  /** Distance before a right-angle (or wider) intersection where vehicles stop (vehicle centre). */
   readonly stopDistance: number
 
   private spawnInterval: number
@@ -169,6 +171,12 @@ export class TrafficSim {
   private junctionKeys = new Map<NodeId, NodeId>()
   /** Edges inside a combined junction box (no stop line on them). */
   private internalEdges = new Set<number>()
+  /**
+   * Stop distance per `edge:node` end where it differs from `stopDistance`:
+   * roads may meet at any angle, and sharper joins need the stop line (and
+   * the box's exit) further from the node.
+   */
+  private stopDistances = new Map<string, number>()
   private junctionsVersion = -1
 
   constructor(graph: RoadGraph, options: TrafficOptions) {
@@ -339,7 +347,9 @@ export class TrafficSim {
       for (const v of lane) {
         const step = v.steps[v.stepIndex]!
         const edge = this.graph.getEdge(step.edge)!
-        if (limit === Infinity) limit = this.frontLimit(v, edge.length)
+        // Followers respect stop lines too: at a sharp join the stop line can
+        // lie further back than the following distance behind a box holder.
+        limit = limit === Infinity ? this.frontLimit(v, edge.length) : Math.min(limit, this.stopLineLimit(v, edge.length))
         const target = Math.min(edge.length, limit, v.progress + edge.speedLimit * dt)
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
@@ -512,15 +522,41 @@ export class TrafficSim {
       const rb = find(b)
       if (ra !== rb) parent.set(Math.max(ra, rb), Math.min(ra, rb))
     }
-    // Junctions: 3+ roads, or a tunnel that 2+ roads merge into.
+    // Sharpest angle between each road end and the other roads at its node.
+    const stops = new Map<string, number>()
+    const sharpest = new Map<NodeId, number>()
+    for (const n of this.graph.nodes()) {
+      const edges = this.graph.edgesAt(n.id)
+      const dirs = edges.map((e) => {
+        const q = this.graph.getNode(this.graph.otherEnd(e, n.id))!.position
+        const len = Math.hypot(q.x - n.position.x, q.y - n.position.y) || 1
+        return { x: (q.x - n.position.x) / len, y: (q.y - n.position.y) / len }
+      })
+      let nodeMin = Math.PI
+      edges.forEach((e, i) => {
+        let min = Math.PI
+        dirs.forEach((d, j) => {
+          if (j !== i) min = Math.min(min, Math.acos(Math.max(-1, Math.min(1, d.x * dirs[i]!.x + d.y * dirs[i]!.y))))
+        })
+        nodeMin = Math.min(nodeMin, min)
+        const stop = junctionStopDistance(this.geometry, min)
+        if (stop > this.stopDistance + 1e-9) stops.set(`${e.id}:${n.id}`, stop)
+      })
+      sharpest.set(n.id, nodeMin)
+    }
+    this.stopDistances = stops
+    // Junctions: 3+ roads, a tunnel that 2+ roads merge into, or a bend
+    // sharper than a right angle (its two road surfaces overlap).
     const portals = new Set(this.portals)
+    const isJunction = (n: NodeId) =>
+      degree(n) >= 3 || (degree(n) >= 2 && (portals.has(n) || sharpest.get(n)! < Math.PI / 2 - 1e-6))
     const intersections = this.graph
       .nodes()
-      .filter((n) => degree(n.id) >= 3 || (portals.has(n.id) && degree(n.id) >= 2))
+      .filter((n) => isJunction(n.id))
       .map((n) => n.id)
     for (const n of intersections) parent.set(n, n)
     // Too close to clear one junction and stop before the next.
-    const threshold = 2 * this.stopDistance + this.geometry.vehicleLength / 2
+    const maxStop = Math.max(this.stopDistance, ...stops.values())
     const internal = new Set<number>()
     for (const start of intersections) {
       for (const first of this.graph.edgesAt(start)) {
@@ -528,20 +564,47 @@ export class TrafficSim {
         let dist = first.length
         let prev = start
         let node = this.graph.otherEnd(first, start)
-        while (degree(node) === 2 && !portals.has(node) && dist < threshold) {
+        const reach = this.stopDistanceAt(first.id, start) + this.geometry.vehicleLength / 2
+        while (degree(node) === 2 && !isJunction(node) && dist < reach + maxStop) {
           const nextEdge = this.graph.edgesAt(node).find((e) => e.id !== chain[chain.length - 1])!
           chain.push(nextEdge.id)
           dist += nextEdge.length
           prev = node
           node = this.graph.otherEnd(nextEdge, prev)
         }
-        if (node !== start && this.junctionKeysHas(node, degree, portals) && dist < threshold) {
+        const last = chain[chain.length - 1]!
+        if (node !== start && isJunction(node) && dist < reach + this.stopDistanceAt(last, node)) {
           union(start, node)
           for (const id of chain) internal.add(id)
         }
       }
     }
-    this.junctionKeys = new Map(intersections.map((n) => [n, find(n)]))
+    // A sharp join's stop line can lie beyond the far end of a short road
+    // (e.g. past a bend of a freehand road). The box then extends through
+    // that bend: the road becomes internal and the stop line moves onto the
+    // next road by the remaining distance.
+    const members = [...intersections]
+    const queue = [...stops].map(([k, d]) => {
+      const [edge, node] = k.split(':').map(Number) as [number, NodeId]
+      return { edge, node, d }
+    })
+    while (queue.length > 0) {
+      const { edge: id, node, d } = queue.pop()!
+      const edge = this.graph.getEdge(id)!
+      if (d <= edge.length || !parent.has(node) || internal.has(id)) continue
+      const far = this.graph.otherEnd(edge, node)
+      if (degree(far) !== 2 || parent.has(far)) continue
+      const next = this.graph.edgesAt(far).find((e) => e.id !== id)!
+      parent.set(far, far)
+      union(node, far)
+      members.push(far)
+      internal.add(id)
+      const rest = d - edge.length
+      const key = `${next.id}:${far}`
+      stops.set(key, Math.max(rest, stops.get(key) ?? this.stopDistance))
+      queue.push({ edge: next.id, node: far, d: rest })
+    }
+    this.junctionKeys = new Map(members.map((n) => [n, find(n)]))
     this.internalEdges = internal
     // Re-key held boxes and timers for the new grouping.
     const holders = [...this.junctionHolder.values()]
@@ -561,8 +624,9 @@ export class TrafficSim {
     }
   }
 
-  private junctionKeysHas(node: NodeId, degree: (n: NodeId) => number, portals: ReadonlySet<NodeId>): boolean {
-    return degree(node) >= 3 || (portals.has(node) && degree(node) >= 2)
+  /** Distance from `node` to the stop line on `edge` (vehicle centre). */
+  private stopDistanceAt(edge: number, node: NodeId): number {
+    return this.stopDistances.get(`${edge}:${node}`) ?? this.stopDistance
   }
 
 
@@ -601,14 +665,17 @@ export class TrafficSim {
     // Driving to its exit portal: nothing ahead along the route.
     const exiting = v.stepIndex + 1 >= v.steps.length
     let limit = exiting ? Infinity : length + this.gapAhead(v, v.stepIndex + 1, this.minGap) - this.minGap
+    return Math.min(limit, this.stopLineLimit(v, length))
+  }
+
+  /** How far `v` may advance before the junction box ahead, unless it holds it. */
+  private stopLineLimit(v: MutableVehicle, length: number): number {
     const step = v.steps[v.stepIndex]!
     const key = this.junctionKeys.get(step.to)
-    if (key !== undefined && this.junctionHolder.get(key) !== v.id) {
-      // Inside a box it does not hold (a new road just created the box
-      // around it): stay put until it gets the box. Otherwise: stop line.
-      limit = Math.min(limit, this.internalEdges.has(step.edge) ? v.progress : length - this.stopDistance)
-    }
-    return limit
+    if (key === undefined || this.junctionHolder.get(key) === v.id) return Infinity
+    // Inside a box it does not hold (a new road just created the box
+    // around it): stay put until it gets the box. Otherwise: stop line.
+    return this.internalEdges.has(step.edge) ? v.progress : Math.max(0, length - this.stopDistanceAt(step.edge, step.to))
   }
 
   /** Room to enter the next lane: capacity and following distance. */
@@ -630,7 +697,7 @@ export class TrafficSim {
         !!step &&
         (this.internalEdges.has(step.edge) ||
           this.junctionKeys.get(step.to) === key ||
-          (this.junctionKeys.get(step.from) === key && v!.progress < this.stopDistance - 1e-9))
+          (this.junctionKeys.get(step.from) === key && v!.progress < this.stopDistanceAt(step.edge, step.from) - 1e-9))
       if (!inBox) {
         this.junctionHolder.delete(key)
         if (v) v.holding = undefined
@@ -644,10 +711,17 @@ export class TrafficSim {
       const step = v.steps[v.stepIndex]!
       if (this.junctionKeys.get(step.to) === undefined) continue
       const edge = this.graph.getEdge(step.edge)!
-      if (this.internalEdges.has(step.edge) || v.progress >= edge.length - this.stopDistance - 1e-6) candidates.push(v)
+      if (this.internalEdges.has(step.edge) || v.progress >= edge.length - this.stopDistanceAt(step.edge, step.to) - 1e-6) candidates.push(v)
     }
-    // Vehicles caught inside a box go first so they can clear it; then oldest first.
-    const inside = (v: MutableVehicle) => (this.internalEdges.has(v.steps[v.stepIndex]!.edge) ? 0 : 1)
+    // Vehicles caught inside a box (on an internal edge, or past a stop line
+    // that a new road just moved back) go first so they can clear it; then
+    // oldest first.
+    const inside = (v: MutableVehicle) => {
+      const step = v.steps[v.stepIndex]!
+      if (this.internalEdges.has(step.edge)) return 0
+      const edge = this.graph.getEdge(step.edge)!
+      return v.progress > edge.length - this.stopDistanceAt(step.edge, step.to) + 1e-6 ? 0 : 1
+    }
     candidates.sort((a, b) => inside(a) - inside(b) || a.id - b.id)
     for (const v of candidates) {
       const key = this.junctionKeys.get(v.steps[v.stepIndex]!.to)!
@@ -667,7 +741,8 @@ export class TrafficSim {
       const nextEdge = this.graph.getEdge(next.edge)
       const nextLane = this.lanes.get(laneKey(next))
       if (!nextEdge || nextEdge.blocked || (nextLane && nextLane.length >= nextEdge.capacity)) continue
-      if (this.gapAhead(v, v.stepIndex + 1, this.minGap + this.stopDistance) < this.minGap + this.stopDistance - 1e-9) continue
+      const clear = this.minGap + this.stopDistanceAt(next.edge, next.from)
+      if (this.gapAhead(v, v.stepIndex + 1, clear) < clear - 1e-9) continue
       this.junctionHolder.set(key, v.id)
       v.holding = key
       if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)

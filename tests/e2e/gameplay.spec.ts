@@ -12,6 +12,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   checkConnection,
   checkPath,
+  constructionOptions,
   createRoadGraph,
   findRoute,
   generateWorld,
@@ -20,6 +21,7 @@ import {
 } from '../../src/game'
 
 const SEED = 77
+const WIDE_JOINS = constructionOptions({ minJoinAngle: Math.PI / 3 })
 const URL = `?seed=${SEED}&test`
 
 /**
@@ -79,7 +81,9 @@ function freehandRoad(world: World): { trace: Point[]; bends: number } {
           const off = bulge * Math.sin(Math.PI * t) + (k === 0 || k === 24 ? 0.5 : 0)
           return { x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off }
         })
-        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1))
+        // Pick a curve with margin to spare (wide joins), so the slightly
+        // different trace a real pointer records still validates.
+        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1), WIDE_JOINS)
         if (check.ok && check.path.length >= 4) return { trace, bends: check.path.length - 2 }
       }
     }
@@ -201,11 +205,17 @@ test.describe('critical player flow', () => {
     expect((await state(page)).activeVehicles).toBeGreaterThan(0)
     // Close every road so the vehicles on the map queue at their junctions.
     await fastForward(page, 10, `for (const e of s.graph.edges()) s.graph.setBlocked(e.id, true)`)
+    // Pause before comparing the model and HUD. Otherwise the real-time RAF
+    // loop keeps changing congestion while Playwright waits for the assertion.
+    await page.getByTestId('hud-pause').click()
+    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
     const jammed = await state(page)
-    expect(jammed.state).toBe('running')
+    expect(jammed.state).toBe('paused')
     expect(jammed.congestion).toBeGreaterThan(5)
     await expect(page.getByTestId('hud-congestion-text')).toContainText(`${Math.round(jammed.congestion)}%`)
-    // Reopen the roads: queues clear and congestion falls.
+    // Reopen the roads, resume and verify that queues clear.
+    await page.getByTestId('overlay-resume').click()
+    await expect(page.getByTestId('overlay')).toHaveCount(0)
     await fastForward(page, 40, `for (const e of s.graph.edges()) s.graph.setBlocked(e.id, false)`)
     const cleared = await state(page)
     expect(cleared.state).toBe('running')

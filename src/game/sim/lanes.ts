@@ -53,10 +53,18 @@ export function laneOffset(g: RoadGeometry = ROAD_GEOMETRY): number {
  * the vehicle's centre, along the route). A stopped vehicle's front stays
  * outside the crossing road's surface by `safetyGap`. The extra `laneOffset`
  * covers lanes being mitred toward a turn, which can move a vehicle up to one
- * lane offset closer to the node.
+ * lane offset closer to the node. `angle` (radians) is the sharpest angle
+ * between the approaching road and any other road at the node.
  */
-export function junctionStopDistance(g: RoadGeometry = ROAD_GEOMETRY): number {
-  return roadWidth(g) / 2 + g.vehicleLength / 2 + g.safetyGap + laneOffset(g)
+export function junctionStopDistance(g: RoadGeometry = ROAD_GEOMETRY, angle = Math.PI / 2): number {
+  if (angle >= Math.PI / 2) return roadWidth(g) / 2 + g.vehicleLength / 2 + g.safetyGap + laneOffset(g)
+  // Sharper joins (any angle is allowed): the two road surfaces overlap in a
+  // wedge near the node, so the stop line moves back until the stopped
+  // vehicle's nearest corner is clear of the other road's surface. Equals the
+  // right-angle distance at 90 degrees.
+  const theta = Math.max(angle, 1e-3)
+  const reach = laneOffset(g) + g.vehicleWidth / 2
+  return g.vehicleLength / 2 + (roadWidth(g) / 2 + g.safetyGap + reach * Math.cos(theta)) / Math.sin(theta) + laneOffset(g)
 }
 
 /**

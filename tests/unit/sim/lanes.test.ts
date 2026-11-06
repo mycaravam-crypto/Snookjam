@@ -213,6 +213,46 @@ describe('generated maps', () => {
   })
 })
 
+describe('sharp player-built junctions', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])('never lets two vehicles overlap (seed %i)', (seed) => {
+    const session = new GameSession({ seed })
+    session.start()
+    let built = 0
+    for (let t = 0; t < 20 * 180 && session.state === 'running'; t++) {
+      session.tick()
+      if (t === 20 * 30 || t === 20 * 60 || t === 20 * 90) built += buildSharpRoad(session) ? 1 : 0
+      if (t % 2 === 0) expect(collisions(session.sim)).toEqual([])
+    }
+    expect(built).toBeGreaterThan(0)
+  })
+})
+
+/** Commits a valid straight road leaving a node at under 45 degrees to one of its roads. */
+function buildSharpRoad(session: GameSession): boolean {
+  const g = session.graph
+  for (const a of g.nodes()) {
+    for (const b of g.nodes()) {
+      const dx = b.position.x - a.position.x
+      const dy = b.position.y - a.position.y
+      const len = Math.hypot(dx, dy)
+      if (len < 2 || len > 7) continue
+      const sharp = g.edgesAt(a.id).some((e) => {
+        const q = g.getNode(g.otherEnd(e, a.id))!.position
+        const ex = q.x - a.position.x
+        const ey = q.y - a.position.y
+        return (dx * ex + dy * ey) / (len * Math.hypot(ex, ey)) > Math.cos(Math.PI / 4)
+      })
+      if (!sharp) continue
+      const check = checkConnection(session.world, g, a.position, b.position)
+      if (check.ok) {
+        session.connectRoad(check.from.location, check.to.location)
+        return true
+      }
+    }
+  }
+  return false
+}
+
 /** Commits the first valid straight road between two graph nodes. */
 function buildAnyRoad(session: GameSession): boolean {
   const nodes = session.graph.nodes()
