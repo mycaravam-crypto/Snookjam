@@ -230,8 +230,17 @@ export class GameSession {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
     const result = this.current.graph.connect(from, to, options)
-    for (const split of result.splits) this.current.sim.applySplit(split)
+    this.applyConnection(result)
     return result
+  }
+
+  /**
+   * Applies a connection that was already committed to `session.graph`
+   * elsewhere (e.g. by ConstructionController, #6), migrating vehicles on
+   * split edges so nobody teleports.
+   */
+  applyConnection(result: ConnectResult): void {
+    for (const split of result.splits) this.current.sim.applySplit(split)
   }
 
   /** Test hook: sets congestion directly (clamped). */

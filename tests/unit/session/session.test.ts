@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
+import { ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
 
 const DT = 1 / 20
 
@@ -158,6 +158,25 @@ describe('GameSession lifecycle', () => {
       expect(after.y).toBeCloseTo(before.y)
     }
     ticks(s, 5)
+  })
+
+  it('works with the construction controller via applyConnection', () => {
+    const { s } = session()
+    s.start()
+    ticks(s, 5)
+    const controller = new ConstructionController(s.world, s.graph)
+    const edge = s.graph.edges().find((e) => e.length >= 4)!
+    const other = s.graph.edges().find((e) => e.id !== edge.id && e.a !== edge.a && e.a !== edge.b && e.b !== edge.a && e.b !== edge.b)!
+    const from = s.graph.positionOf({ kind: 'edge', edge: edge.id, t: 0.5 })
+    const to = s.graph.positionOf({ kind: 'edge', edge: other.id, t: 0.5 })
+    controller.pointerDown(from)
+    controller.pointerMove(to)
+    const outcome = controller.pointerUp(to)
+    expect(outcome.kind).toBe('committed')
+    if (outcome.kind === 'committed') s.applyConnection(outcome.result)
+    // Every vehicle still references live edges and keeps moving.
+    for (const v of s.sim.vehicles()) expect(s.graph.getEdge(v.steps[v.stepIndex]!.edge)).toBeDefined()
+    ticks(s, 10)
   })
 
   it('unsubscribes listeners', () => {
