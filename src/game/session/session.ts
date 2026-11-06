@@ -19,7 +19,7 @@ import { DEFAULT_CONFIG } from '../config'
 import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from '../roads'
 import { FixedStepClock, TrafficSim } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
-import { createBalance, spawnIntervalAt, startingVehiclesFor, type BalanceConfig } from './balance'
+import { createBalance, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
