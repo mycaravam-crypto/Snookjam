@@ -61,6 +61,10 @@ export type VehicleMix = Readonly<Record<VehicleClass, number>>
 export const DEFAULT_VEHICLE_MIX: VehicleMix = Object.freeze({ car: 0.72, van: 0.2, truck: 0.08 })
 
 /** Conservative mixed-traffic gap: safe even when a truck follows another truck. */
+export function mixedVehicleGeometry(g: RoadGeometry = ROAD_GEOMETRY): RoadGeometry {
+  return { ...g, vehicleLength: Math.max(...Object.values(VEHICLE_PROFILES).map((profile) => profile.length)) }
+}
+
 export function mixedVehicleMinGap(g: RoadGeometry = ROAD_GEOMETRY): number {
   return Math.max(...Object.values(VEHICLE_PROFILES).map((profile) =>
     profile.length + 2 * (laneOffset(g) + profile.width / 2 + g.safetyGap),
@@ -223,7 +227,7 @@ export class TrafficSim {
     if (this.minGap < mixedVehicleMinGap(this.geometry) - 1e-9) {
       throw new RangeError(`minGap must be at least ${mixedVehicleMinGap(this.geometry)} for mixed vehicle classes`)
     }
-    this.stopDistance = junctionStopDistance(this.geometry)
+    this.stopDistance = junctionStopDistance(mixedVehicleGeometry(this.geometry))
     this.setSpawnInterval(this.spawnInterval)
   }
 
@@ -573,7 +577,7 @@ export class TrafficSim {
           if (j !== i) min = Math.min(min, Math.acos(Math.max(-1, Math.min(1, d.x * dirs[i]!.x + d.y * dirs[i]!.y))))
         })
         nodeMin = Math.min(nodeMin, min)
-        const stop = junctionStopDistance(this.geometry, min)
+        const stop = junctionStopDistance(mixedVehicleGeometry(this.geometry), min)
         if (stop > this.stopDistance + 1e-9) stops.set(`${e.id}:${n.id}`, stop)
       })
       sharpest.set(n.id, nodeMin)
@@ -766,7 +770,7 @@ export class TrafficSim {
         // Leaving the map through this tunnel: nothing to make room for.
         this.junctionHolder.set(key, v.id)
         v.holding = key
-        if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
+        if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec * VEHICLE_PROFILES[v.kind].length / VEHICLE_PROFILES.car.length)
         continue
       }
       if (!this.remainingValid(v)) continue
