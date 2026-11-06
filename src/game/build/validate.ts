@@ -226,6 +226,7 @@ export function checkPathCrossings(
   clearance: number,
 ): 'crosses-road' | 'duplicate' | 'too-close' | undefined {
   const last = path.length - 1
+  if (path.length === 2 && to) return checkRoadCrossings(graph, from, to, path[0]!, path[1]!)
   for (let i = 1; i <= last; i++) {
     const a = path[i - 1]!
     const b = path[i]!
