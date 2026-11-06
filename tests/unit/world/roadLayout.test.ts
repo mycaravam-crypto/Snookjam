@@ -53,7 +53,7 @@ describe('extractRoadLayout', () => {
   it('marks special tiles as nodes of the given kind', () => {
     const m = mask(['#####'])
     const layout = extractRoadLayout(m.width, m.height, m.road, new Map([[2, 'settlement']]))
-    expect(layout.nodes.find((n) => n.id === 'n2')?.kind).toBe('settlement')
+    expect(layout.nodes.find((n) => n.id === 2)?.kind).toBe('settlement')
     expect(layout.segments).toHaveLength(2)
   })
 })

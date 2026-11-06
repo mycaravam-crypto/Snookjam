@@ -137,14 +137,14 @@ function tryGenerate(seed: number, attempt: number, o: WorldOptions, fallback: b
     name: names[i % names.length]!,
     tile: { tx: s.tx, ty: s.ty },
     radius: s.radius,
-    nodeId: `n${s.ty * width + s.tx}`,
+    nodeId: s.ty * width + s.tx,
   }))
   const portals: Portal[] = portalSites.map((p, i) => ({
     id: `portal-${i}`,
     side: p.side,
     tile: { tx: p.tx, ty: p.ty },
     mouth: portalMouth(p, width, height),
-    nodeId: `n${p.ty * width + p.tx}`,
+    nodeId: p.ty * width + p.tx,
   }))
 
   return deepFreeze({

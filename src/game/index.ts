@@ -4,5 +4,6 @@
  * src/game/render draws through an injected Canvas 2D context.
  */
 export * from './config'
+export * from './roads'
 export * from './world'
 export * from './render'

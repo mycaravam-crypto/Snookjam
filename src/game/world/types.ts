@@ -10,10 +10,9 @@ export type Terrain = 'grass' | 'field' | 'forest' | 'water' | 'settlement'
 
 export type Side = 'north' | 'east' | 'south' | 'west'
 
-export interface Point {
-  readonly x: number
-  readonly y: number
-}
+// One shared point type for world and road graph coordinates (tiles).
+import type { NodeId, Point } from '../roads/graph'
+export type { Point }
 
 export interface TilePoint {
   readonly tx: number
@@ -28,7 +27,7 @@ export interface Settlement {
   /** Half-width of the square footprint in tiles (footprint is 2r+1 wide). */
   readonly radius: number
   /** Road node that serves this settlement. */
-  readonly nodeId: string
+  readonly nodeId: NodeId
 }
 
 /** A tunnel portal where traffic enters and leaves the map. */
@@ -40,17 +39,18 @@ export interface Portal {
   /** Point on the map boundary where the tunnel mouth is drawn. */
   readonly mouth: Point
   /** Road node at the portal. */
-  readonly nodeId: string
+  readonly nodeId: NodeId
 }
 
 export type RoadNodeKind = 'junction' | 'end' | 'settlement' | 'portal'
 
 /**
- * A point in the road network where segments meet or end. Ids are derived from
- * the tile index, so they are stable for a given seed and configuration.
+ * A point in the road network where segments meet or end. The id is the
+ * tile index (ty * width + tx), so it is stable for a given seed and
+ * configuration and is reused as the road graph node id.
  */
-export interface RoadNode {
-  readonly id: string
+export interface WorldRoadNode {
+  readonly id: NodeId
   readonly x: number
   readonly y: number
   readonly tile: TilePoint
@@ -58,20 +58,23 @@ export interface RoadNode {
 }
 
 /** A road between two nodes, as a polyline in world coordinates. */
-export interface RoadSegment {
+export interface WorldRoadSegment {
   readonly id: string
-  readonly from: string
-  readonly to: string
+  readonly from: NodeId
+  readonly to: NodeId
   /** Polyline from `from` to `to`, including both endpoints; bends only. */
   readonly points: readonly Point[]
   /** Length in world units (tiles). */
   readonly length: number
 }
 
-/** Road topology handed to the road graph (#4). */
-export interface RoadLayout {
-  readonly nodes: readonly RoadNode[]
-  readonly segments: readonly RoadSegment[]
+/**
+ * Generated road network: nodes plus polyline segments. Use
+ * createRoadGraph(world) to turn it into a routable RoadGraph.
+ */
+export interface WorldRoadLayout {
+  readonly nodes: readonly WorldRoadNode[]
+  readonly segments: readonly WorldRoadSegment[]
 }
 
 export interface World {
@@ -84,7 +87,7 @@ export interface World {
   readonly road: readonly boolean[]
   readonly settlements: readonly Settlement[]
   readonly portals: readonly Portal[]
-  readonly roads: RoadLayout
+  readonly roads: WorldRoadLayout
   /** How the map was produced; useful for debugging generation. */
   readonly generation: {
     /** Number of attempts used (1 = first try succeeded). */

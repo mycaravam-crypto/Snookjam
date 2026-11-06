@@ -39,6 +39,7 @@ src/
   app/           Vue UI: components, styles. May import from src/game.
   game/          Framework-independent game logic. Must not import Vue or src/app.
     config.ts    MVP tuning defaults
+    roads/       Road graph and shortest-time routing
     world/       World model, seeded generation, viewport (world↔screen) maths
     render/      Canvas 2D drawing through an injected context
 tests/
@@ -65,9 +66,11 @@ random seed is used and shown in the header. "New map" picks a new one.
   tunnel portals on the map edges, one per side.
 - **Roads.** A minimum spanning tree over settlements and portals, each edge
   routed with grid A* (forest costs more, existing roads cost less so routes
-  merge, water is impassable). The road tiles are converted to a
-  `RoadLayout`: nodes (junctions, dead ends, settlements, portals) and
-  segments (polylines with a length in tiles) for the road graph.
+  merge, water is impassable). The road tiles become `world.roads`: nodes
+  (junctions, dead ends, settlements, portals) and polyline segments.
+  `createRoadGraph(world)` turns that into a routable `RoadGraph`, with each
+  bend as a node. Node ids are tile indices (`ty * width + tx`), shared by
+  world nodes, `settlement.nodeId`/`portal.nodeId` and the graph.
 - **Fallback.** If water makes a map unconnectable, generation retries with
   derived seeds (`maxAttempts`, default 8). If all fail, it generates the map
   without water, which is always connectable. `world.generation` records

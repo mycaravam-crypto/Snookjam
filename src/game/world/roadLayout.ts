@@ -1,4 +1,4 @@
-import type { Point, RoadLayout, RoadNode, RoadNodeKind, RoadSegment } from './types'
+import type { Point, RoadNodeKind, WorldRoadLayout, WorldRoadNode, WorldRoadSegment } from './types'
 
 /**
  * Converts a road tile mask into a node/segment layout.
@@ -15,7 +15,7 @@ export function extractRoadLayout(
   height: number,
   road: readonly boolean[],
   special: ReadonlyMap<number, RoadNodeKind>,
-): RoadLayout {
+): WorldRoadLayout {
   const forced = new Set<number>()
   for (;;) {
     const result = tryExtract(width, height, road, special, forced)
@@ -24,7 +24,7 @@ export function extractRoadLayout(
   }
 }
 
-type Attempt = { kind: 'ok'; layout: RoadLayout } | { kind: 'retry'; promote: number }
+type Attempt = { kind: 'ok'; layout: WorldRoadLayout } | { kind: 'retry'; promote: number }
 
 function tryExtract(
   width: number,
@@ -45,19 +45,19 @@ function tryExtract(
   }
   const isNode = (i: number) => special.has(i) || forced.has(i) || neighbours(i).length !== 2
 
-  const nodes: RoadNode[] = []
-  const nodeIds = new Map<number, string>()
+  const nodes: WorldRoadNode[] = []
+  const nodeIds = new Map<number, number>()
   for (let i = 0; i < road.length; i++) {
     if (!road[i] || !isNode(i)) continue
     const degree = neighbours(i).length
     const kind: RoadNodeKind = special.get(i) ?? (degree <= 1 ? 'end' : 'junction')
     const tile = { tx: i % width, ty: Math.floor(i / width) }
-    const id = `n${i}`
+    const id = i
     nodeIds.set(i, id)
     nodes.push({ id, x: tile.tx + 0.5, y: tile.ty + 0.5, tile, kind })
   }
 
-  const segments: RoadSegment[] = []
+  const segments: WorldRoadSegment[] = []
   const usedSteps = new Set<string>()
   const visitedTiles = new Set<number>()
   for (const [start] of nodeIds) {
