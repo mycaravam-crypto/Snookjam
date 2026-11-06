@@ -86,7 +86,7 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
 })
 
 export function createBalance(overrides: Partial<BalanceConfig> = {}): BalanceConfig {
-  const b = { ...DEFAULT_BALANCE, ...overrides }
+  const b = { ...DEFAULT_BALANCE, ...overrides, vehicleMix: { ...DEFAULT_BALANCE.vehicleMix, ...overrides.vehicleMix } }
   for (const [key, value] of Object.entries(b)) {
     if (key === 'vehicleMix') continue
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
