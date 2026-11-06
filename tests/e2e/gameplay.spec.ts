@@ -12,6 +12,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   checkConnection,
   checkPath,
+  constructionOptions,
   createRoadGraph,
   findRoute,
   generateWorld,
@@ -20,6 +21,7 @@ import {
 } from '../../src/game'
 
 const SEED = 77
+const WIDE_JOINS = constructionOptions({ minJoinAngle: Math.PI / 3 })
 const URL = `?seed=${SEED}&test`
 
 /**
@@ -79,7 +81,9 @@ function freehandRoad(world: World): { trace: Point[]; bends: number } {
           const off = bulge * Math.sin(Math.PI * t) + (k === 0 || k === 24 ? 0.5 : 0)
           return { x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off }
         })
-        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1))
+        // Pick a curve with margin to spare (wide joins), so the slightly
+        // different trace a real pointer records still validates.
+        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1), WIDE_JOINS)
         if (check.ok && check.path.length >= 4) return { trace, bends: check.path.length - 2 }
       }
     }
