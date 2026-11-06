@@ -160,11 +160,11 @@ describe('GameSession lifecycle', () => {
     ticks(s, 5)
   })
 
-  it('works with the construction controller via applyConnection', () => {
+  it('commits construction-controller roads through the session', () => {
     const { s } = session()
     s.start()
     ticks(s, 5)
-    const controller = new ConstructionController(s.world, s.graph)
+    const controller = new ConstructionController(s.world, s.graph, undefined, (a, b) => s.connectRoad(a, b))
     const edge = s.graph.edges().find((e) => e.length >= 4)!
     const other = s.graph.edges().find((e) => e.id !== edge.id && e.a !== edge.a && e.a !== edge.b && e.b !== edge.a && e.b !== edge.b)!
     const from = s.graph.positionOf({ kind: 'edge', edge: edge.id, t: 0.5 })
@@ -173,7 +173,6 @@ describe('GameSession lifecycle', () => {
     controller.pointerMove(to)
     const outcome = controller.pointerUp(to)
     expect(outcome.kind).toBe('committed')
-    if (outcome.kind === 'committed') s.applyConnection(outcome.result)
     // Every vehicle still references live edges and keeps moving.
     for (const v of s.sim.vehicles()) expect(s.graph.getEdge(v.steps[v.stepIndex]!.edge)).toBeDefined()
     ticks(s, 10)

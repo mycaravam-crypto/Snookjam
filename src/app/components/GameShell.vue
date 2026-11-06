@@ -90,8 +90,10 @@ watch(construction, watchConstruction)
 
 defineExpose({ game })
 
-// Development/test hook for browser tests (#9); stripped from production builds.
-if (import.meta.env.DEV) (window as unknown as { __snookjam?: unknown }).__snookjam = game
+// Test hook for browser tests (#9): always in dev, and in production only with ?test in the URL.
+if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test')) {
+  ;(window as unknown as { __snookjam?: unknown }).__snookjam = game
+}
 </script>
 
 <template>
