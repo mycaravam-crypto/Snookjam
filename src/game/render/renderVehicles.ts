@@ -1,4 +1,3 @@
-import { ROAD_GEOMETRY } from '../sim/lanes'
 import { VEHICLE_PROFILES, type TrafficSim, type Vehicle, type VehicleState } from '../sim/traffic'
 import { screenAngle, worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
@@ -24,11 +23,11 @@ const STATE_OUTLINE: Record<VehicleState, string> = {
  */
 export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport): void {
   const s = v.scale
-  // Drawn at their simulated size so the gap between lanes stays visible.
-  const length = s * ROAD_GEOMETRY.vehicleLength
-  const width = s * ROAD_GEOMETRY.vehicleWidth
   ctx.save()
   for (const vehicle of sim.vehicles()) {
+    const profile = VEHICLE_PROFILES[vehicle.kind]
+    const length = s * profile.length
+    const width = s * profile.width
     const { position, heading } = sim.lanePositionOf(vehicle)
     const p = worldToScreen(v, position)
     drawCar(ctx, vehicle, p.x, p.y, screenAngle(v, heading), length, width)
