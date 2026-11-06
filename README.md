@@ -40,6 +40,7 @@ src/
   game/          Framework-independent game logic. Must not import Vue or src/app.
     config.ts    MVP tuning defaults
     roads/       Road graph and shortest-time routing
+    sim/         Traffic simulation and fixed-step clock
     world/       World model, seeded generation, viewport (world↔screen) maths
     render/      Canvas 2D drawing through an injected context
 tests/
@@ -75,6 +76,27 @@ random seed is used and shown in the header. "New map" picks a new one.
   derived seeds (`maxAttempts`, default 8). If all fail, it generates the map
   without water, which is always connectable. `world.generation` records
   the attempts and whether the fallback was used.
+
+## Traffic simulation
+
+`TrafficSim` (src/game/sim) runs at a fixed 20 Hz step through
+`FixedStepClock`, so results never depend on frame rate, and draws all
+randomness from a seeded source.
+
+- Vehicles enter at tunnel portals with a shortest-time route to another
+  portal and are removed when they reach it.
+- Each road has one lane per direction. Vehicles keep at least `minGap`
+  (1 tile) apart, never overtake, and only enter the next road when it is
+  below capacity. Otherwise they wait at the junction, which forms queues.
+- Routes are re-planned only at junctions, after the road graph changes, so
+  new roads are used without vehicles teleporting or reversing. A vehicle
+  with no route waits in the `stuck` state until the graph changes.
+- Spawns that cannot enter yet stay pending; a spawn with no route between
+  portals is dropped and counted as `unroutable`.
+- Defaults: 8 starting vehicles, at most 100 active, one spawn every 4 s
+  (adjustable, never below 0.8 s).
+- After a road split (`RoadGraph.connect`), call `sim.applySplit(split)` so
+  vehicles on the old edge keep their position.
 
 ## Tech stack
 

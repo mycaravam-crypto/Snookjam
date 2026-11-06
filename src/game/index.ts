@@ -5,5 +5,6 @@
  */
 export * from './config'
 export * from './roads'
+export * from './sim'
 export * from './world'
 export * from './render'
