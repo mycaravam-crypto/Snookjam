@@ -52,8 +52,11 @@ function scenario(seed: number) {
     portals,
     random: createRng(seed),
     startingVehicles: 8,
-    spawnIntervalSec: 0.4,
-    minSpawnIntervalSec: 0.4,
+    // Steady pressure the single intersection cannot keep up with. (With
+    // two-lane junction boxes, #22, 0.4 s saturated even the relieved network,
+    // which hid the relief behind tunnel backlog.)
+    spawnIntervalSec: 0.6,
+    minSpawnIntervalSec: 0.6,
   })
   const controller = new ConstructionController(world, graph, undefined, (from, to, via) => {
     const result = graph.connect(from, to, {}, via)

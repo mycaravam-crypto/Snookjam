@@ -1,3 +1,4 @@
+import { ROAD_GEOMETRY } from '../sim/lanes'
 import type { TrafficSim, Vehicle, VehicleState } from '../sim/traffic'
 import { screenAngle, worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
@@ -14,25 +15,22 @@ const STATE_OUTLINE: Record<VehicleState, string> = {
   stuck: COLORS.vehicleStuck,
 }
 
-/** Sideways offset so the two directions of a road use separate lanes. */
-const LANE_OFFSET = 0.13
-
 /**
- * Draws vehicles as small cars oriented along their heading. Waiting cars get
+ * Draws vehicles as small cars in their lanes, at the position and size the
+ * simulation uses (sim.lanePositionOf, ROAD_GEOMETRY), oriented along their
+ * heading. Waiting cars get
  * an amber outline and stuck cars a red outline plus a "!" marker, so queue
  * state does not rely on colour alone. Reads the sim; never mutates it.
  */
 export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport): void {
   const s = v.scale
-  const length = Math.max(4, s * 0.5)
-  const width = Math.max(3, s * 0.3)
+  // Drawn at their simulated size so the gap between lanes stays visible.
+  const length = s * ROAD_GEOMETRY.vehicleLength
+  const width = s * ROAD_GEOMETRY.vehicleWidth
   ctx.save()
   for (const vehicle of sim.vehicles()) {
-    const { position, heading } = sim.positionOf(vehicle)
-    // Drive on the right: shift perpendicular to the heading.
-    const x = position.x - Math.sin(heading) * LANE_OFFSET
-    const y = position.y + Math.cos(heading) * LANE_OFFSET
-    const p = worldToScreen(v, { x, y })
+    const { position, heading } = sim.lanePositionOf(vehicle)
+    const p = worldToScreen(v, position)
     drawCar(ctx, vehicle, p.x, p.y, screenAngle(v, heading), length, width)
   }
   ctx.restore()
@@ -60,17 +58,19 @@ function drawCar(
   const sy = SHADOW * (Math.cos(heading) - Math.sin(heading))
   ctx.fillStyle = COLORS.vehicleShadow
   ctx.fillRect(-hl + sx, -hw + sy, length, width)
-  // Outline doubles as the queue-state indicator.
+  // The state outline is drawn inside the footprint so cars never look wider
+  // than the lane allows.
+  const o = Math.max(1, width * 0.18)
   ctx.fillStyle = STATE_OUTLINE[vehicle.state]
-  ctx.fillRect(-hl - 1, -hw - 1, length + 2, width + 2)
-  ctx.fillStyle = BODY_COLORS[vehicle.id % BODY_COLORS.length]!
   ctx.fillRect(-hl, -hw, length, width)
+  ctx.fillStyle = BODY_COLORS[vehicle.id % BODY_COLORS.length]!
+  ctx.fillRect(-hl + o, -hw + o, length - 2 * o, width - 2 * o)
   // Cabin roof, windscreen (front) and rear window.
   ctx.fillStyle = COLORS.vehicleRoof
-  ctx.fillRect(-length * 0.22, -hw + 1, length * 0.36, width - 2)
+  ctx.fillRect(-length * 0.22, -hw + o, length * 0.36, width - 2 * o)
   ctx.fillStyle = COLORS.vehicleGlass
-  ctx.fillRect(length * 0.14, -hw + 1, length * 0.16, width - 2)
-  ctx.fillRect(-length * 0.34, -hw + 1, length * 0.1, width - 2)
+  ctx.fillRect(length * 0.1, -hw + o, length * 0.16, width - 2 * o)
+  ctx.fillRect(-length * 0.34, -hw + o, length * 0.1, width - 2 * o)
   if (length >= 8) {
     // Headlights.
     const lw = Math.max(1, width * 0.22)
