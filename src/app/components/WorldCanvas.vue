@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   clientToWorld,
+  FONT_FAMILY,
   fitViewport,
   renderBuiltRoads,
   renderConstructionPreview,
@@ -177,6 +178,15 @@ function subscribe(): void {
 onMounted(() => {
   subscribe()
   draw()
+  // Town labels are cached in the background layer; repaint it once the
+  // display font is ready so they don't stay in the fallback font.
+  document.fonts?.load(`600 16px ${FONT_FAMILY}`).then(
+    () => {
+      backgroundKey = ''
+      scheduleDraw()
+    },
+    () => {},
+  )
   if (typeof ResizeObserver !== 'undefined' && canvas.value) {
     observer = new ResizeObserver(() => draw())
     observer.observe(canvas.value)
