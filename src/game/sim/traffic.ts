@@ -393,7 +393,7 @@ export class TrafficSim {
         v.state = moved > 1e-9 ? 'moving' : v.state === 'stuck' ? 'stuck' : 'waiting'
         if (v.progress >= edge.length - 1e-9) atEnd.push(v)
         leader = v
-        limit = v.progress - this.minGap
+        limit = Infinity
       }
     }
 
@@ -785,8 +785,8 @@ export class TrafficSim {
       const nextEdge = this.graph.getEdge(next.edge)
       const nextLane = this.lanes.get(laneKey(next))
       if (!nextEdge || nextEdge.blocked || (nextLane && nextLane.length >= nextEdge.capacity)) continue
-      const clear = this.minGap + this.stopDistanceAt(next.edge, next.from)
-      if (this.gapAhead(v, v.stepIndex + 1, clear) < clear - 1e-9) continue
+      const clear = this.stopDistanceAt(next.edge, next.from)
+      if (this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) < clear - 1e-9) continue
       this.junctionHolder.set(key, v.id)
       v.holding = key
       if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
