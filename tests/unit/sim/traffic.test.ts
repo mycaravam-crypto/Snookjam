@@ -178,6 +178,44 @@ describe('movement and exit', () => {
   })
 })
 
+describe('intersections', () => {
+  it('lets one vehicle cross an intersection per junctionClearSec', () => {
+    // T-junction at node 1 with three portals; all routes cross node 1.
+    const g = RoadGraph.fromLayout({
+      nodes: [
+        { id: 0, x: 0, y: 0 },
+        { id: 1, x: 4, y: 0 },
+        { id: 2, x: 8, y: 0 },
+        { id: 3, x: 4, y: 4 },
+      ],
+      segments: [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 1, to: 3 },
+      ],
+    })
+    const s = new TrafficSim(g, { portals: [0, 2, 3], random: rng(5), startingVehicles: 12, spawnIntervalSec: 0.8, junctionClearSec: 2 })
+    const crossings: number[] = []
+    const onFirstEdge = new Map<number, number>()
+    for (let i = 0; i < 1200; i++) {
+      s.step(DT)
+      for (const v of s.vehicles()) {
+        const prev = onFirstEdge.get(v.id)
+        if (prev === 0 && v.stepIndex === 1) crossings.push(s.stats().time)
+        onFirstEdge.set(v.id, v.stepIndex)
+      }
+    }
+    expect(crossings.length).toBeGreaterThan(10)
+    for (let i = 1; i < crossings.length; i++) expect(crossings[i]! - crossings[i - 1]!).toBeGreaterThanOrEqual(2 - 1e-6)
+  })
+
+  it('does not limit bends (degree-2 nodes)', () => {
+    const s = new TrafficSim(corridor(), { portals: [0, 2], random: { next: () => 0 }, startingVehicles: 3, spawnIntervalSec: 1000, junctionClearSec: 100 })
+    run(s, 200)
+    expect(s.stats().totalExited).toBe(3)
+  })
+})
+
 describe('routing changes', () => {
   it('drops spawns explicitly when portals are disconnected', () => {
     const g = corridor()

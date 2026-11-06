@@ -41,6 +41,7 @@ src/
     config.ts    MVP tuning defaults
     roads/       Road graph and shortest-time routing
     sim/         Traffic simulation and fixed-step clock
+    session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
     build/       Road construction: validation and the drag-to-build controller
     render/      Canvas 2D drawing through an injected context
@@ -110,8 +111,35 @@ randomness from a seeded source.
   portals is dropped and counted as `unroutable`.
 - Defaults: 8 starting vehicles, at most 100 active, one spawn every 4 s
   (adjustable, never below 0.8 s).
+- Intersections (three or more roads meeting) let one vehicle through every
+  `junctionClearSec` (1.8 s by default), so busy junctions become the
+  bottlenecks that new roads relieve. Bends are not limited.
 - After a road split (`RoadGraph.connect`), call `sim.applySplit(split)` so
   vehicles on the old edge keep their position.
+
+## Congestion and levels
+
+`GameSession` (src/game/session) owns one run:
+`ready → running ⇄ paused`, `running → levelComplete → running (next level)`,
+`running → gameOver`, and `restart()` from any state. Time only advances while
+running, through the fixed-step clock. Each level gets its own seeded map
+(level 1 uses the run seed), a fresh traffic sim and zero congestion.
+
+Congestion (0–100 %) changes every step by `rise − fall`:
+
+- rise = `blockedRatePerSec` × (share of vehicles waiting ≥ `blockedAfterSec`,
+  above a `blockedTolerance` share) + `pendingRatePerSec` × (vehicles stuck at
+  blocked tunnels / `pendingReference`, capped at 1)
+- fall = `exitRelief` per vehicle that leaves + `flowDecayPerSec` × unblocked share
+- No rise during the first `levelStartGraceSec` of a level. Reaching 100 %
+  ends the run.
+
+Levels last 180 s. The spawn interval starts at 2.5 s, ramps down to 60 % of
+that within a level, starts 25 % lower each level, and never drops below
+0.8 s. Each level also adds 2 starting vehicles. All values are in
+`DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
+without player roads: levels 1–2 stay below about 5 % congestion, level 3
+peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
 
 ## Tech stack
 

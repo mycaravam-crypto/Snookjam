@@ -1,0 +1,172 @@
+import { describe, expect, it } from 'vitest'
+import { GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
+
+const DT = 1 / 20
+
+function session(options: Partial<SessionOptions> = {}) {
+  const s = new GameSession({ seed: 42, ...options })
+  const events: SessionEvent[] = []
+  s.subscribe((e) => events.push(e))
+  return { s, events }
+}
+
+function ticks(s: GameSession, seconds: number): void {
+  for (let i = 0; i < Math.round(seconds / DT); i++) s.tick(DT)
+}
+
+describe('GameSession lifecycle', () => {
+  it('starts in ready and only advances while running', () => {
+    const { s, events } = session()
+    expect(s.state).toBe('ready')
+    expect(s.update(1)).toBe(0)
+    ticks(s, 1)
+    expect(s.snapshot().levelTime).toBe(0)
+    expect(s.start()).toBe(true)
+    expect(s.start()).toBe(false)
+    expect(events).toEqual([{ type: 'stateChange', from: 'ready', to: 'running' }])
+    expect(s.update(0.5)).toBe(10)
+    expect(s.snapshot().levelTime).toBeCloseTo(0.5)
+  })
+
+  it('freezes time, vehicles, spawning and congestion while paused', () => {
+    const { s } = session()
+    s.start()
+    ticks(s, 20)
+    s.setCongestionForTesting(40)
+    expect(s.pause()).toBe(true)
+    const before = { snap: s.snapshot(), vehicles: JSON.stringify(s.sim.vehicles()), stats: s.sim.stats() }
+    expect(s.update(30)).toBe(0)
+    ticks(s, 30)
+    expect(s.snapshot()).toEqual(before.snap)
+    expect(JSON.stringify(s.sim.vehicles())).toBe(before.vehicles)
+    expect(s.sim.stats()).toEqual(before.stats)
+    expect(s.pause()).toBe(false)
+    expect(s.resume()).toBe(true)
+    // Time spent paused is not caught up after resuming.
+    expect(s.update(0.05)).toBe(1)
+    expect(s.snapshot().levelTime).toBeCloseTo(20.05)
+  })
+
+  it('completes the level at the survival target and continues to the next', () => {
+    const { s, events } = session({ balance: { levelDurationSec: 30 } })
+    s.start()
+    ticks(s, 29.9)
+    expect(s.state).toBe('running')
+    ticks(s, 0.1)
+    expect(s.state).toBe('levelComplete')
+    expect(events.filter((e) => e.type === 'levelComplete')).toEqual([{ type: 'levelComplete', level: 1 }])
+    ticks(s, 5)
+    expect(s.snapshot().levelTime).toBeCloseTo(30)
+
+    const level1World = s.world.seed
+    const exited = s.snapshot().vehiclesExited
+    expect(s.nextLevel()).toBe(true)
+    const snap = s.snapshot()
+    expect(snap).toMatchObject({ state: 'running', level: 2, levelTime: 0, congestion: 0 })
+    expect(snap.totalTime).toBeCloseTo(30)
+    expect(snap.vehiclesExited).toBe(exited)
+    expect(s.world.seed).not.toBe(level1World)
+    expect(s.sim.spawnIntervalSec).toBeLessThan(s.balance.baseSpawnIntervalSec)
+    expect(s.nextLevel()).toBe(false)
+  })
+
+  it('ends the run exactly once when congestion reaches the limit', () => {
+    const { s, events } = session()
+    s.start()
+    ticks(s, 15)
+    s.setCongestionForTesting(100)
+    s.tick(DT)
+    expect(s.state).toBe('gameOver')
+    ticks(s, 10)
+    s.update(10)
+    const overs = events.filter((e) => e.type === 'gameOver')
+    expect(overs).toHaveLength(1)
+    expect(overs[0]).toMatchObject({ level: 1 })
+    expect(s.pause()).toBe(false)
+    expect(s.resume()).toBe(false)
+    expect(s.nextLevel()).toBe(false)
+  })
+
+  it('loses a level eventually when traffic is never relieved', () => {
+    const { s, events } = session({ seed: 1 })
+    s.start()
+    let level = 1
+    while (s.state !== 'gameOver' && level < 10) {
+      ticks(s, s.balance.levelDurationSec + 1)
+      if (s.state === 'levelComplete') {
+        s.nextLevel()
+        level++
+      }
+    }
+    expect(s.state).toBe('gameOver')
+    expect(level).toBeGreaterThan(1) // level 1 is survivable without building
+    expect(events.filter((e) => e.type === 'gameOver')).toHaveLength(1)
+  })
+
+  it('restarts cleanly with no stale vehicles, timers or congestion', () => {
+    const fresh = new GameSession({ seed: 42, balance: { levelDurationSec: 30 } })
+    fresh.start()
+    ticks(fresh, 12)
+    const expected = { snap: fresh.snapshot(), vehicles: JSON.stringify(fresh.sim.vehicles()) }
+
+    const { s } = session({ balance: { levelDurationSec: 30 } })
+    s.start()
+    ticks(s, 30)
+    s.nextLevel()
+    ticks(s, 15)
+    s.setCongestionForTesting(100)
+    s.tick(DT)
+    expect(s.state).toBe('gameOver')
+
+    expect(s.restart()).toBe(true)
+    const snap = s.snapshot()
+    expect(snap).toMatchObject({ state: 'running', level: 1, levelTime: 0, totalTime: 0, congestion: 0, vehiclesExited: 0 })
+    expect(s.sim.stats().totalSpawned).toBe(0)
+    ticks(s, 12)
+    // Same seed, same steps: identical to a brand-new session.
+    expect(s.snapshot()).toEqual(expected.snap)
+    expect(JSON.stringify(s.sim.vehicles())).toBe(expected.vehicles)
+  })
+
+  it('is deterministic for a seed', () => {
+    const play = () => {
+      const s = new GameSession({ seed: 'snookjam' })
+      s.start()
+      ticks(s, 60)
+      return s.snapshot()
+    }
+    expect(play()).toEqual(play())
+  })
+
+  it('builds roads through the session and keeps vehicles in place', () => {
+    const { s } = session()
+    expect(() => s.connectRoad({ kind: 'node', node: 0 }, { kind: 'node', node: 1 })).toThrow(/ready/)
+    s.start()
+    ticks(s, 5)
+    const graph = s.graph
+    const edge = graph.edges().find((e) => e.length >= 4)!
+    const other = graph.edges().find((e) => e.id !== edge.id && e.a !== edge.a && e.a !== edge.b && e.b !== edge.a && e.b !== edge.b)!
+    const positions = new Map(s.sim.vehicles().map((v) => [v.id, s.sim.positionOf(v).position]))
+    const version = graph.version
+    const result = s.connectRoad({ kind: 'edge', edge: edge.id, t: 0.5 }, { kind: 'edge', edge: other.id, t: 0.5 })
+    expect(graph.version).toBeGreaterThan(version)
+    expect(graph.getEdge(result.edge)).toBeDefined()
+    for (const v of s.sim.vehicles()) {
+      const before = positions.get(v.id)!
+      const after = s.sim.positionOf(v).position
+      expect(after.x).toBeCloseTo(before.x)
+      expect(after.y).toBeCloseTo(before.y)
+    }
+    ticks(s, 5)
+  })
+
+  it('unsubscribes listeners', () => {
+    const { s, events } = session()
+    const seen: SessionEvent[] = []
+    const off = s.subscribe((e) => seen.push(e))
+    off()
+    s.start()
+    expect(seen).toEqual([])
+    expect(events).toHaveLength(1)
+  })
+})
