@@ -6,7 +6,7 @@ import {
   VEHICLE_PROFILES,
   type VehicleClass,
 } from '../../../src/game/sim'
-import { createBalance, vehicleMixFor } from '../../../src/game/session/balance'
+import { createBalance, maxVehiclesFor, vehicleMixFor } from '../../../src/game/session/balance'
 
 function corridor(): RoadGraph {
   return RoadGraph.fromLayout({
@@ -55,6 +55,7 @@ describe('vehicle classes (#23)', () => {
     const balance = createBalance()
     const early = vehicleMixFor(balance, 1)
     const later = vehicleMixFor(balance, 5)
+    expect(maxVehiclesFor(balance, 5)).toBeGreaterThan(maxVehiclesFor(balance, 1))
     expect(later.van).toBeGreaterThan(early.van)
     expect(later.truck).toBeGreaterThan(early.truck)
     expect(later.car).toBeGreaterThanOrEqual(0.25)
