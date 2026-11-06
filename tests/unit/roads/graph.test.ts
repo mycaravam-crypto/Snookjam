@@ -211,3 +211,17 @@ describe('crossing junction construction (#29)', () => {
     expect(g.version).toBe(version)
   })
 })
+
+
+describe('open-ended crossing construction (#29)', () => {
+  it('creates a junction when a freehand road crosses an existing road', () => {
+    const g = RoadGraph.fromLayout({ nodes: [
+      { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 }, { id: 2, x: 4, y: -4 },
+    ], segments: [{ from: 0, to: 1 }] })
+    const result = g.connectToPoint({ kind: 'node', node: 2 }, { x: 4, y: 4 })
+    expect(result.splits).toHaveLength(1)
+    const junction = result.nodes[1]!
+    expect(g.getNode(junction)?.position).toEqual({ x: 4, y: 0 })
+    expect(g.edgesAt(junction)).toHaveLength(4)
+  })
+})
