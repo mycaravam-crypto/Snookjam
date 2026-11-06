@@ -87,6 +87,8 @@ export interface TrafficOptions {
   readonly junctionClearSec?: number
   /** Two-lane road and vehicle dimensions (defaults to ROAD_GEOMETRY). */
   readonly geometry?: RoadGeometry
+  /** Relative spawn weights; normalized internally. */
+  readonly vehicleMix?: Partial<VehicleMix>
 }
 
 export type VehicleState = 'moving' | 'waiting' | 'stuck'
@@ -132,6 +134,7 @@ export interface TrafficStats {
 
 interface MutableVehicle {
   id: number
+  kind: VehicleClass
   origin: NodeId
   destination: NodeId
   steps: RouteStep[]
@@ -165,6 +168,7 @@ export class TrafficSim {
   readonly maxPendingSpawns: number
   readonly junctionClearSec: number
   readonly geometry: RoadGeometry
+  private vehicleMix: VehicleMix
   /** Distance before a right-angle (or wider) intersection where vehicles stop (vehicle centre). */
   readonly stopDistance: number
 
@@ -209,6 +213,7 @@ export class TrafficSim {
     this.spawnInterval = options.spawnIntervalSec ?? DEFAULT_CONFIG.initialSpawnIntervalSec
     this.minSpawnIntervalSec = options.minSpawnIntervalSec ?? DEFAULT_CONFIG.minSpawnIntervalSec
     this.geometry = options.geometry ?? ROAD_GEOMETRY
+    this.vehicleMix = normalizeVehicleMix(options.vehicleMix)
     this.minGap = options.minGap ?? Math.max(VEHICLE_SPACING, minFollowingDistance(this.geometry), mixedVehicleMinGap(this.geometry))
     this.junctionClearSec = options.junctionClearSec ?? DEFAULT_JUNCTION_CLEAR_SEC
     this.maxPendingSpawns = options.maxPendingSpawns ?? this.maxVehicles
@@ -217,6 +222,11 @@ export class TrafficSim {
     validateRoadGeometry(this.geometry, this.minGap)
     this.stopDistance = junctionStopDistance(this.geometry)
     this.setSpawnInterval(this.spawnInterval)
+  }
+
+  /** Updates the deterministic weighted vehicle mix for subsequent spawns. */
+  setVehicleMix(mix: Partial<VehicleMix>): void {
+    this.vehicleMix = normalizeVehicleMix(mix)
   }
 
   /** Updates the deterministic weighted vehicle mix for subsequent spawns. */
@@ -845,6 +855,7 @@ export class TrafficSim {
   private spawnVehicle(origin: NodeId, destination: NodeId, route: readonly RouteStep[]): void {
     const v: MutableVehicle = {
       id: this.nextId++,
+      kind: this.chooseVehicleClass(),
       origin,
       destination,
       steps: [...route],
