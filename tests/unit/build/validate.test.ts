@@ -69,14 +69,17 @@ describe('checkConnection', () => {
     expect(checkConnection(world, graph, { x: 4.9, y: 1.5 }, { x: 4.9, y: 5.5 })).toMatchObject({ reason: 'obstacle' })
   })
 
-  it('rejects a road that crosses another road between its ends', () => {
+  it('allows a road to cross another road and creates a connected junction', () => {
     const { world, graph } = setup()
     const first = checkConnection(world, graph, { x: 3.5, y: 1.5 }, { x: 3.5, y: 5.5 })
     expect(first.ok).toBe(true)
     if (first.ok) graph.connect(first.from.location, first.to.location)
-    expect(checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 4.5, y: 5.5 })).toMatchObject({
-      reason: 'crosses-road',
-    })
+    const crossing = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 4.5, y: 5.5 })
+    expect(crossing.ok).toBe(true)
+    if (!crossing.ok) return
+    const result = graph.connect(crossing.from.location, crossing.to.location)
+    expect(result.splits.length).toBeGreaterThan(0)
+    for (const node of result.nodes.slice(1, -1)) expect(graph.edgesAt(node)).toHaveLength(4)
   })
 
   it('rejects a road longer than the configured maximum', () => {

@@ -171,3 +171,43 @@ describe('connect', () => {
     expect(g.getEdge(edge)?.length).toBe(8)
   })
 })
+
+
+describe('crossing junction construction (#29)', () => {
+  it('splits an existing road and connects the new road at a crossing', () => {
+    const g = RoadGraph.fromLayout({ nodes: [
+      { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
+      { id: 2, x: 4, y: -4 }, { id: 3, x: 4, y: 4 },
+    ], segments: [{ from: 0, to: 1 }] })
+    const result = g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 })
+    expect(result.splits).toHaveLength(1)
+    expect(result.nodes).toHaveLength(3)
+    const junction = result.nodes[1]!
+    expect(g.getNode(junction)?.position).toEqual({ x: 4, y: 0 })
+    expect(g.edgesAt(junction)).toHaveLength(4)
+  })
+
+  it('splits one original edge at several crossings in path order', () => {
+    const g = RoadGraph.fromLayout({ nodes: [
+      { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
+      { id: 2, x: 1, y: -2 }, { id: 3, x: 7, y: -2 },
+    ], segments: [{ from: 0, to: 1 }] })
+    const result = g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 }, {},
+      [{ x: 3, y: 2 }, { x: 5, y: -2 }])
+    expect(result.splits).toHaveLength(3)
+    expect(result.nodes.slice(1, 4).map((id) => g.getNode(id)?.position.x)).toEqual([2, 4, 6])
+    expect(result.nodes).toHaveLength(5)
+    for (const node of result.nodes.slice(1, 4)) expect(g.edgesAt(node)).toHaveLength(4)
+  })
+
+  it('does not mutate the live graph when the planned connection fails', () => {
+    const g = RoadGraph.fromLayout({ nodes: [
+      { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
+      { id: 2, x: 4, y: -4 }, { id: 3, x: 4, y: 4 },
+    ], segments: [{ from: 0, to: 1 }] })
+    const before = g.toLayout(), version = g.version
+    expect(() => g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 }, { speedLimit: -1 })).toThrow()
+    expect(g.toLayout()).toEqual(before)
+    expect(g.version).toBe(version)
+  })
+})

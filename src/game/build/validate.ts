@@ -241,7 +241,8 @@ export function checkPathCrossings(
         if (pointSegmentDistance(bend, p, q) < EPSILON) return 'crosses-road'
         continue
       }
-      if (segmentsIntersect(a, b, p, q) || segmentsIntersect(p, q, a, b)) return 'crosses-road'
+      // Proper crossings become graph junctions when the road is committed.
+      if (overlaps(a, b, p, q)) return 'duplicate'
     }
   }
   for (let i = 1; i < last; i++) {
@@ -303,7 +304,8 @@ export function checkRoadCrossings(
       if (overlaps(a, b, p, q)) return 'duplicate'
       continue
     }
-    if (segmentsIntersect(a, b, p, q)) return 'crosses-road'
+    // A proper crossing is now a supported junction; overlapping geometry is not.
+    if (overlaps(a, b, p, q)) return 'duplicate'
   }
   return undefined
 }
@@ -410,6 +412,7 @@ export function checkRoadSpacing(
       if (skip.has(edge.id)) continue
       const p = graph.getNode(edge.a)!.position
       const q = graph.getNode(edge.b)!.position
+      if (segmentsIntersect(a, b, p, q) || segmentsIntersect(p, q, a, b)) continue
       if (segmentDistance(a, b, p, q) < options.clearance - 1e-9) return 'too-close'
     }
   }
