@@ -232,11 +232,6 @@ export class TrafficSim {
     this.vehicleMix = normalizeVehicleMix(mix)
   }
 
-  /** Updates the deterministic weighted vehicle mix for subsequent spawns. */
-  setVehicleMix(mix: Partial<VehicleMix>): void {
-    this.vehicleMix = normalizeVehicleMix(mix)
-  }
-
   get spawnIntervalSec(): number {
     return this.spawnInterval
   }
