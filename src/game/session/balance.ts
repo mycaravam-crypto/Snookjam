@@ -2,7 +2,8 @@
  * Tunable balance values for congestion and level progression (#7).
  * Keep every gameplay coefficient here rather than in simulation code.
  */
-import { DEFAULT_CONFIG } from '../config'\nimport type { VehicleMix } from '../sim/traffic'
+import { DEFAULT_CONFIG } from '../config'
+import type { VehicleMix } from '../sim/traffic'
 
 export interface BalanceConfig {
   // Level progression
@@ -22,6 +23,9 @@ export interface BalanceConfig {
   readonly maxVehicles: number
   /** Seconds an intersection stays occupied after each crossing vehicle. */
   readonly junctionClearSec: number
+  readonly vehicleMix: VehicleMix
+  readonly vansPerLevel: number
+  readonly trucksPerLevel: number
 
   // Congestion model (all rates in percentage points)
   /** A vehicle counts as blocked once it has waited this long without moving. */
@@ -61,6 +65,9 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   startingVehiclesPerLevel: 2,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   junctionClearSec: 1.8,
+  vehicleMix: Object.freeze({ car: 0.78, van: 0.18, truck: 0.04 }),
+  vansPerLevel: 0.025,
+  trucksPerLevel: 0.015,
 
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
@@ -78,8 +85,12 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
 export function createBalance(overrides: Partial<BalanceConfig> = {}): BalanceConfig {
   const b = { ...DEFAULT_BALANCE, ...overrides }
   for (const [key, value] of Object.entries(b)) {
+    if (key === 'vehicleMix') continue
     if (!Number.isFinite(value) || value < 0) throw new RangeError(`${key} must be a non-negative number`)
   }
+  const mix = b.vehicleMix
+  if (!mix || [mix.car, mix.van, mix.truck].some((n) => !Number.isFinite(n) || n < 0) ||
+      mix.car + mix.van + mix.truck <= 0) throw new RangeError('vehicleMix must contain non-negative weights with a positive total')
   if (!(b.levelDurationSec > 0)) throw new RangeError('levelDurationSec must be positive')
   if (!(b.minSpawnIntervalSec > 0)) throw new RangeError('minSpawnIntervalSec must be positive')
   if (b.blockedTolerance >= 1) throw new RangeError('blockedTolerance must be below 1')
