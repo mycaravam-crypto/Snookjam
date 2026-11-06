@@ -17,25 +17,32 @@ export function renderBuiltRoads(ctx: ConstructionContext, roads: readonly Built
   ] as const) {
     ctx.strokeStyle = color
     ctx.lineWidth = Math.max(2, s * width)
-    for (const road of roads) line(ctx, v, road.from, road.to)
+    for (const road of roads) polyline(ctx, v, roadPoints(road))
   }
   if (s >= 10) {
     ctx.strokeStyle = COLORS.roadMarking
     ctx.lineWidth = Math.max(1, s * 0.05)
     ctx.setLineDash([s * 0.25, s * 0.25])
-    for (const road of roads) line(ctx, v, road.from, road.to)
+    for (const road of roads) polyline(ctx, v, roadPoints(road))
     ctx.setLineDash([])
   }
   ctx.restore()
 }
 
-export type ConstructionFeedback =
-  | { readonly kind: 'committed'; readonly from: Point; readonly to: Point }
-  | { readonly kind: 'rejected'; readonly from: Point; readonly to: Point }
+export type ConstructionFeedback = {
+  readonly kind: 'committed' | 'rejected'
+  readonly from: Point
+  readonly to: Point
+  /** Road polyline; defaults to the straight line from `from` to `to`. */
+  readonly points?: readonly Point[]
+}
 
 /**
- * Draws the drag preview: solid green with round end caps when valid, dashed
- * red with a cross at the end when invalid (shape differs, not just colour).
+ * Draws the drag preview along the smoothed freehand path: solid green with
+ * round end caps when valid, dashed red with a cross at the end when invalid
+ * (shape differs, not just colour). While the end is within snapping range a
+ * ring marks the snapped connection point and a thin tether joins it to the
+ * pointer, so the player can see where the road will attach before releasing.
  * Also draws a short-lived committed/rejected flash.
  */
 export function renderConstructionPreview(
@@ -51,31 +58,63 @@ export function renderConstructionPreview(
     ctx.globalAlpha = 0.85
     ctx.strokeStyle = feedback.kind === 'committed' ? COLORS.buildValid : COLORS.buildInvalid
     ctx.lineWidth = Math.max(3, s * 0.75)
-    line(ctx, v, feedback.from, feedback.to)
+    polyline(ctx, v, roadPoints(feedback))
     ctx.globalAlpha = 1
   }
   if (preview) {
     const valid = preview.check.ok
+    const points = preview.path.length >= 2 ? preview.path : [preview.from, preview.to]
     ctx.strokeStyle = COLORS.buildOutline
     ctx.lineWidth = Math.max(4, s * 0.6)
-    line(ctx, v, preview.from, preview.to)
+    polyline(ctx, v, points)
     ctx.strokeStyle = valid ? COLORS.buildValid : COLORS.buildInvalid
     ctx.lineWidth = Math.max(2, s * 0.4)
     if (!valid) ctx.setLineDash([s * 0.4, s * 0.3])
-    line(ctx, v, preview.from, preview.to)
+    polyline(ctx, v, points)
     ctx.setLineDash([])
+    if (preview.endSnap) snapIndicator(ctx, v, preview.pointer, preview.endSnap.position, preview.endSnap.location.kind === 'node')
     endpoint(ctx, v, preview.from, true)
     endpoint(ctx, v, preview.to, valid)
   }
   ctx.restore()
 }
 
-function line(ctx: RenderContext, v: Viewport, a: Point, b: Point): void {
-  const p = worldToScreen(v, a)
-  const q = worldToScreen(v, b)
+function roadPoints(road: { from: Point; to: Point; points?: readonly Point[] }): readonly Point[] {
+  return road.points && road.points.length >= 2 ? road.points : [road.from, road.to]
+}
+
+function polyline(ctx: RenderContext, v: Viewport, points: readonly Point[]): void {
+  if (points.length < 2) return
   ctx.beginPath()
-  ctx.moveTo(p.x, p.y)
-  ctx.lineTo(q.x, q.y)
+  points.forEach((point, i) => {
+    const p = worldToScreen(v, point)
+    if (i === 0) ctx.moveTo(p.x, p.y)
+    else ctx.lineTo(p.x, p.y)
+  })
+  ctx.stroke()
+}
+
+/**
+ * Snap feedback: a ring around the connection point (square for a junction or
+ * road end, circle for a point along a road) and a thin tether to the pointer.
+ */
+function snapIndicator(ctx: RenderContext, v: Viewport, pointer: Point, at: Point, node: boolean): void {
+  const p = worldToScreen(v, at)
+  const r = Math.max(9, v.scale * 0.8)
+  ctx.strokeStyle = COLORS.buildOutline
+  ctx.lineWidth = 1.5
+  polyline(ctx, v, [pointer, at])
+  ctx.lineWidth = Math.max(2, v.scale * 0.12)
+  ctx.beginPath()
+  if (node) {
+    ctx.moveTo(p.x - r, p.y - r)
+    ctx.lineTo(p.x + r, p.y - r)
+    ctx.lineTo(p.x + r, p.y + r)
+    ctx.lineTo(p.x - r, p.y + r)
+    ctx.lineTo(p.x - r, p.y - r)
+  } else {
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+  }
   ctx.stroke()
 }
 

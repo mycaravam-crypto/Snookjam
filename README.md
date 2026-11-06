@@ -47,7 +47,8 @@ src/
     sim/         Traffic simulation and fixed-step clock
     session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
-    build/       Road construction: validation and the drag-to-build controller
+    build/       Road construction: freehand path geometry, validation and the
+                 drag-to-build controller
     render/      Canvas 2D drawing through an injected context
 tests/
   unit/          Vitest tests for UI and game logic
@@ -71,17 +72,27 @@ or the app layer.
   pointer input is converted back to world coordinates.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
-- **Build a road:** press on an existing road, drag to another road, release.
-  Works with mouse, touch and stylus (Pointer Events). Endpoints snap to the
-  nearest road within ¾ of a tile, and to a junction within ½ a tile.
+- **Build a road:** press on an existing road, draw the road along any path
+  (around a lake, say) and release on or near another road. Works with mouse,
+  touch and stylus (Pointer Events).
+- **Snapping is generous:** both ends snap to the nearest point *along* a road
+  within 1¼ tiles (`DEFAULT_SNAP_DISTANCE`, configurable through
+  `constructionOptions({ snapDistance })`), and to a junction or road end
+  within ½ a tile. While the end is in range, a ring marks where the road will
+  attach: a square for a junction, a circle for a point along a road.
+- The drawn trajectory is resampled, smoothed to remove jitter and simplified
+  into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
+  graph node.
 - While dragging, the preview is **solid green** with a round end when the
   road can be built, and **dashed red** with a cross when it cannot. The status
   line at the bottom says why (e.g. "Roads cannot cross water").
 - A road is rejected if it does not start and end on the network, is shorter
   than one tile, duplicates or runs along an existing road, crosses water or
-  leaves the map, or crosses another road anywhere except at its ends.
-- New roads join the road graph immediately (splitting the roads they attach
-  to), so later route queries can use them.
+  leaves the map, crosses another road anywhere except at its ends, crosses
+  itself, or has a bend within ½ a tile of another road.
+- New roads join the road graph immediately and atomically (a rejected road
+  changes nothing), splitting the roads they attach to, so later route
+  queries can use them. Vehicles re-plan at their next junction.
 
 ## World and maps
 

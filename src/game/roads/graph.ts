@@ -255,31 +255,71 @@ export class RoadGraph {
     const options = { speedLimit: edge.speedLimit, blocked: edge.blocked }
     const toA = this.addEdge(edge.a, node.id, options)
     const toB = this.addEdge(node.id, edge.b, options)
-    return { node: node.id, split: { removed: edge.id, node: node.id, towardA: toA.id, towardB: toB.id } }
+    return {
+      node: node.id,
+      split: {
+        removed: edge.id,
+        node: node.id,
+        a: edge.a,
+        b: edge.b,
+        towardA: toA.id,
+        towardB: toB.id,
+        towardALength: toA.length,
+        towardBLength: toB.length,
+      },
+    }
   }
 
   /**
-   * Adds a straight road between two existing road locations, splitting edges
-   * where an endpoint lies mid-edge. Validation (obstacles, crossings) is the
-   * caller's job; this only enforces graph invariants and throws if the
-   * connection would be zero-length or duplicate. Nothing is changed on error.
+   * Adds a road between two existing road locations, splitting edges where an
+   * endpoint lies mid-edge. With `via` points the road is a polyline: one new
+   * node per via point, chained by straight edges (#18 freehand roads).
+   *
+   * Validation (obstacles, crossings) is the caller's job; this only enforces
+   * graph invariants and throws if the connection would be zero-length or
+   * duplicate. The mutation is atomic: everything is checked before the graph
+   * is touched, so nothing is changed on error.
    */
-  connect(from: RoadLocation, to: RoadLocation, options: EdgeOptions = {}): ConnectResult {
-    const check = this.canConnect(from, to)
+  connect(from: RoadLocation, to: RoadLocation, options: EdgeOptions = {}, via: readonly Point[] = []): ConnectResult {
+    const check = this.canConnect(from, to, via)
     if (!check.ok) throw new Error(`cannot connect: ${check.reason}`)
     const start = this.ensureNodeAt(from)
     // `to` may reference the edge that was just split; remap it if so.
     const end = this.ensureNodeAt(remapLocation(this, to, start.split))
-    const edge = this.addEdge(start.node, end.node, options)
-    return { edge: edge.id, splits: [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined) }
+    const chain = [start.node, ...via.map((p) => this.addNode(p).id), end.node]
+    const edges: EdgeId[] = []
+    for (let i = 1; i < chain.length; i++) edges.push(this.addEdge(chain[i - 1]!, chain[i]!, options).id)
+    return {
+      edge: edges[0]!,
+      edges,
+      nodes: chain,
+      splits: [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined),
+    }
   }
 
-  /** Checks graph-level validity of a proposed connection without mutating. */
-  canConnect(from: RoadLocation, to: RoadLocation): { ok: true } | { ok: false; reason: ConnectRejection } {
+  /**
+   * Checks graph-level validity of a proposed connection without mutating.
+   * With `via` points the road may join two points of the same edge or two
+   * already-connected nodes (it takes a different path); it must still have
+   * distinct ends and no zero-length segments.
+   */
+  canConnect(
+    from: RoadLocation,
+    to: RoadLocation,
+    via: readonly Point[] = [],
+  ): { ok: true } | { ok: false; reason: ConnectRejection } {
     if (!this.locationExists(from) || !this.locationExists(to)) return { ok: false, reason: 'unknown-location' }
     const p = this.positionOf(from)
     const q = this.positionOf(to)
     if (distance(p, q) < EPSILON) return { ok: false, reason: 'zero-length' }
+    if (via.length > 0) {
+      if (!via.every((v) => Number.isFinite(v.x) && Number.isFinite(v.y))) return { ok: false, reason: 'invalid-path' }
+      const points = [p, ...via, q]
+      for (let i = 1; i < points.length; i++) {
+        if (distance(points[i - 1]!, points[i]!) < EPSILON) return { ok: false, reason: 'zero-length' }
+      }
+      return { ok: true }
+    }
     if (sameEdge(from, to)) return { ok: false, reason: 'duplicate' }
     const a = this.resolveExistingNode(from)
     const b = this.resolveExistingNode(to)
@@ -361,23 +401,42 @@ export class RoadGraph {
   }
 }
 
+/**
+ * Describes one edge split. Self-contained (does not need the graph), so a
+ * sequence of splits can be replayed in order even when a later split
+ * retires an edge created by an earlier one, as when a freehand road starts
+ * and ends on the same edge.
+ */
 export interface EdgeSplit {
   /** The retired edge id. */
   readonly removed: EdgeId
   /** The new junction node. */
   readonly node: NodeId
+  /** The retired edge's `a` endpoint. */
+  readonly a: NodeId
+  /** The retired edge's `b` endpoint. */
+  readonly b: NodeId
   /** New edge from the old `a` endpoint to the junction. */
   readonly towardA: EdgeId
   /** New edge from the junction to the old `b` endpoint. */
   readonly towardB: EdgeId
+  /** Length of `towardA`, i.e. the junction's distance from `a`. */
+  readonly towardALength: number
+  /** Length of `towardB`, i.e. the junction's distance from `b`. */
+  readonly towardBLength: number
 }
 
 export interface ConnectResult {
+  /** The first new edge (the only one for a straight road). */
   readonly edge: EdgeId
+  /** Every new edge, in order from `from` to `to`. */
+  readonly edges: readonly EdgeId[]
+  /** The road's nodes in order, including both (possibly new) endpoints. */
+  readonly nodes: readonly NodeId[]
   readonly splits: readonly EdgeSplit[]
 }
 
-export type ConnectRejection = 'unknown-location' | 'zero-length' | 'duplicate'
+export type ConnectRejection = 'unknown-location' | 'zero-length' | 'duplicate' | 'invalid-path'
 
 export interface NearestLocation {
   readonly location: RoadLocation

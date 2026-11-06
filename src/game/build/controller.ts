@@ -1,11 +1,12 @@
-import type { ConnectResult, Point, RoadGraph, RoadLocation } from '../roads/graph'
+import type { ConnectResult, NearestLocation, Point, RoadGraph, RoadLocation } from '../roads/graph'
 import type { World } from '../world/types'
+import { appendSample } from './path'
 import {
-  checkConnection,
+  checkPath,
   DEFAULT_CONSTRUCTION_OPTIONS,
   snapToRoad,
-  type ConnectionCheck,
   type ConstructionOptions,
+  type PathCheck,
   type RejectionReason,
 } from './validate'
 
@@ -14,37 +15,54 @@ export interface BuiltRoad {
   readonly id: number
   readonly from: Point
   readonly to: Point
+  /** Full polyline from `from` to `to` (two points for a straight road). */
+  readonly points: readonly Point[]
 }
 
 /** Live construction preview while the player is dragging. */
 export interface ConstructionPreview {
   /** Snapped start on the network. */
   readonly from: Point
-  /** Snapped end if valid/on a road, otherwise the raw pointer position. */
+  /** Snapped end if on a road, otherwise the raw pointer position. */
   readonly to: Point
-  readonly check: ConnectionCheck
+  /** Raw pointer position. */
+  readonly pointer: Point
+  /** Smoothed road geometry that would be built, from `from` to `to`. */
+  readonly path: readonly Point[]
+  /** Where the end currently snaps to, if within tolerance. */
+  readonly endSnap?: NearestLocation
+  readonly check: PathCheck
 }
 
 /** Result of releasing the pointer. */
 export type ConstructionOutcome =
   | { readonly kind: 'committed'; readonly road: BuiltRoad; readonly result: ConnectResult }
-  | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly from: Point; readonly to: Point }
+  | {
+      readonly kind: 'rejected'
+      readonly reason: RejectionReason
+      readonly from: Point
+      readonly to: Point
+      readonly path: readonly Point[]
+    }
   | { readonly kind: 'none' }
 
 /**
- * Commits a validated connection. Defaults to `graph.connect`; a game session
- * can supply its own (e.g. one that also migrates vehicles on split edges).
+ * Commits a validated connection. `via` holds the bends of a freehand road
+ * (empty for a straight one). Defaults to `graph.connect`; a game session can
+ * supply its own (e.g. one that also migrates vehicles on split edges). It
+ * must leave the graph unchanged if it throws.
  */
-export type CommitConnection = (from: RoadLocation, to: RoadLocation) => ConnectResult
+export type CommitConnection = (from: RoadLocation, to: RoadLocation, via: readonly Point[]) => ConnectResult
 
 /**
- * Drag-to-build state machine. Takes world coordinates only: converting
- * pointer events to world points is the UI's job, and validation lives in
- * validate.ts.
+ * Freehand drag-to-build state machine (#6, #18). Takes world coordinates
+ * only: converting pointer events to world points is the UI's job, path
+ * geometry lives in path.ts and validation in validate.ts.
  *
- *   pointerDown on a road -> preview starts
- *   pointerMove            -> preview follows the pointer and re-validates
- *   pointerUp              -> commits exactly one connection, or none
+ *   pointerDown on a road -> preview starts, trajectory capture begins
+ *   pointerMove            -> samples are recorded; the smoothed preview
+ *                             follows them and the end re-snaps continuously
+ *   pointerUp              -> commits exactly one road, or none
  *
  * Commits mutate the shared RoadGraph so later route queries use the new
  * road. `ConnectResult.splits` is passed on so traffic can migrate vehicles
@@ -52,6 +70,7 @@ export type CommitConnection = (from: RoadLocation, to: RoadLocation) => Connect
  */
 export class ConstructionController {
   private previewState: ConstructionPreview | undefined
+  private samples: Point[] = []
   private readonly built: BuiltRoad[] = []
   private readonly listeners = new Set<() => void>()
 
@@ -59,7 +78,7 @@ export class ConstructionController {
     readonly world: World,
     readonly graph: RoadGraph,
     readonly options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
-    private readonly commit: CommitConnection = (from, to) => graph.connect(from, to),
+    private readonly commit: CommitConnection = (from, to, via) => graph.connect(from, to, {}, via),
   ) {}
 
   get preview(): ConstructionPreview | undefined {
@@ -85,32 +104,60 @@ export class ConstructionController {
     const start = snapToRoad(this.graph, point, this.options)
     if (!start) {
       this.previewState = undefined
+      this.samples = []
       return false
     }
+    this.samples = [{ x: point.x, y: point.y }]
     this.previewState = this.makePreview(start.position, point)
     this.emit()
     return true
   }
 
-  pointerMove(point: Point): void {
+  /**
+   * Records pointer positions (pass several for coalesced pointer events) and
+   * updates the preview once.
+   */
+  pointerMove(points: Point | readonly Point[]): void {
     if (!this.previewState) return
-    this.previewState = this.makePreview(this.previewState.from, point)
+    const list: readonly Point[] = Array.isArray(points) ? points : [points as Point]
+    if (list.length === 0) return
+    for (const p of list) appendSample(this.samples, p, this.options.sampleSpacing)
+    this.previewState = this.makePreview(this.previewState.from, list[list.length - 1]!)
     this.emit()
   }
 
   pointerUp(point: Point): ConstructionOutcome {
     if (!this.previewState) return { kind: 'none' }
+    appendSample(this.samples, point, this.options.sampleSpacing)
     const preview = this.makePreview(this.previewState.from, point)
     this.previewState = undefined
+    this.samples = []
     const { check } = preview
     let outcome: ConstructionOutcome
+    const rejected = (reason: RejectionReason): ConstructionOutcome => ({
+      kind: 'rejected',
+      reason,
+      from: preview.from,
+      to: preview.to,
+      path: preview.path,
+    })
     if (check.ok) {
-      const result = this.commit(check.from.location, check.to.location)
-      const road: BuiltRoad = { id: this.built.length, from: check.from.position, to: check.to.position }
-      this.built.push(road)
-      outcome = { kind: 'committed', road, result }
+      try {
+        const result = this.commit(check.from.location, check.to.location, check.path.slice(1, -1))
+        const road: BuiltRoad = {
+          id: this.built.length,
+          from: check.from.position,
+          to: check.to.position,
+          points: check.path,
+        }
+        this.built.push(road)
+        outcome = { kind: 'committed', road, result }
+      } catch {
+        // The commit function rejected it (e.g. game over); graph unchanged.
+        outcome = rejected('build-failed')
+      }
     } else {
-      outcome = { kind: 'rejected', reason: check.reason, from: preview.from, to: preview.to }
+      outcome = rejected(check.reason)
     }
     this.emit()
     return outcome
@@ -120,13 +167,21 @@ export class ConstructionController {
   cancel(): void {
     if (!this.previewState) return
     this.previewState = undefined
+    this.samples = []
     this.emit()
   }
 
   private makePreview(from: Point, pointer: Point): ConstructionPreview {
-    const check = checkConnection(this.world, this.graph, from, pointer, this.options)
+    const check = checkPath(this.world, this.graph, from, pointer, this.samples.slice(1), this.options)
     const to = check.to?.position ?? pointer
-    return { from: check.from?.position ?? from, to, check }
+    return {
+      from: check.from?.position ?? from,
+      to,
+      pointer: { x: pointer.x, y: pointer.y },
+      path: check.path.length > 0 ? check.path : [from, pointer],
+      ...(check.to ? { endSnap: check.to } : {}),
+      check,
+    }
   }
 
   private emit(): void {

@@ -160,11 +160,41 @@ describe('GameSession lifecycle', () => {
     ticks(s, 5)
   })
 
+  it('builds freehand roads through the session via bend points (#18)', () => {
+    const { s } = session()
+    s.start()
+    ticks(s, 5)
+    const edge = s.graph.edges().find((e) => e.length >= 4)!
+    const from = { kind: 'edge', edge: edge.id, t: 0.25 } as const
+    const to = { kind: 'edge', edge: edge.id, t: 0.75 } as const
+    const p = s.graph.positionOf(from)
+    const q = s.graph.positionOf(to)
+    // A detour bulging out sideways from the edge, back onto the same edge.
+    const nx = -(q.y - p.y) / Math.hypot(q.x - p.x, q.y - p.y)
+    const ny = (q.x - p.x) / Math.hypot(q.x - p.x, q.y - p.y)
+    const via = [{ x: (p.x + q.x) / 2 + nx * 2, y: (p.y + q.y) / 2 + ny * 2 }]
+    const positions = new Map(s.sim.vehicles().map((v) => [v.id, s.sim.positionOf(v).position]))
+    // Both ends on one edge: the second split retires a half of the first.
+    const result = s.connectRoad(from, to, undefined, via)
+    expect(result.splits).toHaveLength(2)
+    expect(result.splits[1]!.removed).toBe(result.splits[0]!.towardB)
+    expect(result.edges).toHaveLength(2)
+    expect(s.graph.getNode(result.nodes[1]!)!.position).toEqual(via[0])
+    for (const v of s.sim.vehicles()) {
+      expect(s.graph.getEdge(v.steps[v.stepIndex]!.edge)).toBeDefined()
+      const before = positions.get(v.id)!
+      const after = s.sim.positionOf(v).position
+      expect(after.x).toBeCloseTo(before.x)
+      expect(after.y).toBeCloseTo(before.y)
+    }
+    ticks(s, 10)
+  })
+
   it('commits construction-controller roads through the session', () => {
     const { s } = session()
     s.start()
     ticks(s, 5)
-    const controller = new ConstructionController(s.world, s.graph, undefined, (a, b) => s.connectRoad(a, b))
+    const controller = new ConstructionController(s.world, s.graph, undefined, (a, b, via) => s.connectRoad(a, b, undefined, via))
     const edge = s.graph.edges().find((e) => e.length >= 4)!
     const other = s.graph.edges().find((e) => e.id !== edge.id && e.a !== edge.a && e.a !== edge.b && e.b !== edge.a && e.b !== edge.b)!
     const from = s.graph.positionOf({ kind: 'edge', edge: edge.id, t: 0.5 })
