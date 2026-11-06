@@ -190,7 +190,7 @@ describe('crossing junction construction (#29)', () => {
   it('splits one original edge at several crossings in path order', () => {
     const g = RoadGraph.fromLayout({ nodes: [
       { id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 },
-      { id: 2, x: 1, y: -2 }, { id: 3, x: 7, y: -2 },
+      { id: 2, x: 1, y: -2 }, { id: 3, x: 7, y: 2 },
     ], segments: [{ from: 0, to: 1 }] })
     const result = g.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 }, {},
       [{ x: 3, y: 2 }, { x: 5, y: -2 }])
