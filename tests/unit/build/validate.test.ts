@@ -14,6 +14,15 @@ describe('checkConnection', () => {
     expect(check.ok).toBe(true)
   })
 
+  it('uses a forgiving two-tile radius for the release end while keeping start acquisition precise', () => {
+    const { world, graph } = setup()
+    const check = checkConnection(world, graph, { x: 8, y: 1.5 }, { x: 8, y: 3.5 })
+    expect(check.ok).toBe(true)
+    if (check.ok) expect(check.to.position.x).toBeCloseTo(9.5)
+    expect(checkConnection(world, graph, { x: 8, y: 1.5 }, { x: 7.8, y: 3.5 }, constructionOptions({ endSnapDistance: 1.4 }))).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(checkConnection(world, graph, { x: 4.5, y: 3 }, { x: 7.5, y: 5.5 })).toMatchObject({ ok: false, reason: 'not-on-road' })
+  })
+
   it('snaps endpoints near a road onto the road', () => {
     const { world, graph } = setup()
     const check = checkConnection(world, graph, { x: 2.6, y: 1.9 }, { x: 2.4, y: 5.2 })
@@ -42,7 +51,7 @@ describe('checkConnection', () => {
 
   it('rejects an end that is not on a road but reports the snapped start', () => {
     const { world, graph } = setup()
-    const check = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 3.2 })
+    const check = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 3.2 }, constructionOptions({ endSnapDistance: 1.25 }))
     expect(check).toMatchObject({ ok: false, reason: 'not-connected' })
     expect(check.from).toBeDefined()
   })
