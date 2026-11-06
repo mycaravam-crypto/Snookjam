@@ -75,6 +75,18 @@ describe('freehand road drawing', () => {
     })
   })
 
+  it('validates an open endpoint without requiring a destination snap', () => {
+    const { world, graph } = setup()
+    const check = checkPath(world, graph, { x: 2.5, y: 1.5 }, { x: 3.5, y: 3.5 }, [
+      { x: 3, y: 2.5 },
+    ])
+    expect(check.ok).toBe(true)
+    if (check.ok) {
+      expect(check.to).toBeUndefined()
+      expect(check.path.at(-1)).toEqual({ x: 3.5, y: 3.5 })
+    }
+  })
+
   it('previews the smoothed trajectory while drawing', () => {
     const { controller } = setup()
     controller.pointerDown({ x: 3, y: 1.7 })
