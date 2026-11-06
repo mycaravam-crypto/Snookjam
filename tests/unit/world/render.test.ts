@@ -31,7 +31,8 @@ describe('renderWorld', () => {
     renderWorld(ctx, world, fitViewport(world.width, world.height, w, h))
     const count = (name: string) => calls.filter((c) => c.name === name).length
     expect(count('fillRect')).toBeGreaterThanOrEqual(world.width * world.height)
-    expect(count('stroke')).toBeGreaterThanOrEqual(world.roads.segments.length * 2)
+    expect(count('stroke')).toBeGreaterThanOrEqual(3)
+    expect(count('stroke')).toBeLessThanOrEqual(4 + world.portals.length)
     // Each portal draws one filled tunnel mouth.
     expect(count('arc')).toBeGreaterThanOrEqual(world.portals.length * 2)
     expect(count('save')).toBe(count('restore'))
