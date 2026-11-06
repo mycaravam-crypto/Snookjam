@@ -79,7 +79,7 @@ describe('freehand road drawing', () => {
     const { world, graph } = setup()
     const check = checkPath(world, graph, { x: 2.5, y: 1.5 }, { x: 3.5, y: 3.5 }, [
       { x: 3, y: 2.5 },
-    ])
+    ], constructionOptions({ endSnapDistance: 1.25 }))
     expect(check.ok).toBe(true)
     if (check.ok) {
       expect(check.to).toBeUndefined()
@@ -131,7 +131,7 @@ describe('generous snapping', () => {
 
   it('uses a wider default release-end snap radius than start acquisition', () => {
     const { world, graph } = setup(constructionOptions())
-    const check = checkPath(world, graph, { x: 3, y: 1.5 }, { x: 8, y: 3.5 }, [])
+    const check = checkPath(world, graph, { x: 8, y: 1.5 }, { x: 8, y: 3.5 }, [])
     expect(check.ok).toBe(true)
     if (check.ok) expect(check.to?.position).toEqual({ x: 9.5, y: 3.5 })
   })
