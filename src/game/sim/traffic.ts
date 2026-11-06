@@ -93,6 +93,7 @@ export type VehicleState = 'moving' | 'waiting' | 'stuck'
 
 export interface Vehicle {
   readonly id: number
+  readonly kind: VehicleClass
   readonly origin: NodeId
   readonly destination: NodeId
   /** Planned steps; `steps[stepIndex]` is the edge currently driven. */
