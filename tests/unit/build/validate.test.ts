@@ -14,6 +14,15 @@ describe('checkConnection', () => {
     expect(check.ok).toBe(true)
   })
 
+  it('uses a forgiving two-tile radius for the release end while keeping start acquisition precise', () => {
+    const { world, graph } = setup()
+    const check = checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 3.5 })
+    expect(check.ok).toBe(true)
+    if (check.ok) expect(check.to.position.y).toBeCloseTo(1.5)
+    expect(checkConnection(world, graph, { x: 2.5, y: 1.5 }, { x: 2.5, y: 3.6 })).toMatchObject({ ok: false, reason: 'not-connected' })
+    expect(checkConnection(world, graph, { x: 2.5, y: 2.8 }, { x: 2.5, y: 5.5 })).toMatchObject({ ok: false, reason: 'not-on-road' })
+  })
+
   it('snaps endpoints near a road onto the road', () => {
     const { world, graph } = setup()
     const check = checkConnection(world, graph, { x: 2.6, y: 1.9 }, { x: 2.4, y: 5.2 })
