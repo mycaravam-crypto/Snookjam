@@ -12,6 +12,9 @@
  * - At the end of an edge a vehicle may only enter its next lane if that lane
  *   is below capacity and the last vehicle in it has cleared `minGap`.
  *   Otherwise it waits at the junction, which is how queues form.
+ * - An intersection (a node where three or more roads meet) lets one vehicle
+ *   through every `junctionClearSec`, so busy intersections become
+ *   bottlenecks. Bends and dead ends (degree <= 2) have no such limit.
  * - Routes are re-planned only at junctions (never mid-edge), when the graph
  *   has changed since the route was planned. A vehicle with no route waits at
  *   its junction in the explicit `stuck` state until the graph changes.
@@ -44,6 +47,8 @@ export interface TrafficOptions {
   readonly minGap?: number
   /** Upper bound on queued-but-not-yet-entered spawns. */
   readonly maxPendingSpawns?: number
+  /** Seconds an intersection stays occupied after a vehicle crosses it. */
+  readonly junctionClearSec?: number
 }
 
 export type VehicleState = 'moving' | 'waiting' | 'stuck'
@@ -62,6 +67,8 @@ export interface Vehicle {
   readonly state: VehicleState
   /** Total seconds spent waiting or stuck. */
   readonly waitTime: number
+  /** Seconds waited without moving since the vehicle last moved. */
+  readonly waitingFor: number
   readonly spawnedAt: number
 }
 
@@ -94,12 +101,16 @@ interface MutableVehicle {
   speed: number
   state: VehicleState
   waitTime: number
+  waitingFor: number
   spawnedAt: number
   /** Graph version the remaining steps were planned against. */
   routeVersion: number
   /** Graph version of the last failed re-plan (for stuck vehicles). */
   failedVersion: number
 }
+
+/** Default seconds an intersection is occupied by a crossing vehicle. */
+export const DEFAULT_JUNCTION_CLEAR_SEC = 0.6
 
 const laneKey = (step: RouteStep): string => `${step.edge}>${step.from}`
 
@@ -111,6 +122,7 @@ export class TrafficSim {
   readonly minSpawnIntervalSec: number
   readonly minGap: number
   readonly maxPendingSpawns: number
+  readonly junctionClearSec: number
 
   private spawnInterval: number
   private spawnTimer = 0
@@ -124,6 +136,8 @@ export class TrafficSim {
   private readonly fleet = new Map<number, MutableVehicle>()
   /** Lane key -> vehicles, front (highest progress) first. */
   private readonly lanes = new Map<string, MutableVehicle[]>()
+  /** Intersection node -> simulation time at which it is free again. */
+  private readonly junctionFreeAt = new Map<NodeId, number>()
 
   constructor(graph: RoadGraph, options: TrafficOptions) {
     this.graph = graph
@@ -134,6 +148,7 @@ export class TrafficSim {
     this.spawnInterval = options.spawnIntervalSec ?? DEFAULT_CONFIG.initialSpawnIntervalSec
     this.minSpawnIntervalSec = options.minSpawnIntervalSec ?? DEFAULT_CONFIG.minSpawnIntervalSec
     this.minGap = options.minGap ?? VEHICLE_SPACING
+    this.junctionClearSec = options.junctionClearSec ?? DEFAULT_JUNCTION_CLEAR_SEC
     this.maxPendingSpawns = options.maxPendingSpawns ?? this.maxVehicles
     this.pending = Math.min(options.startingVehicles ?? DEFAULT_CONFIG.startingVehicles, this.maxPendingSpawns)
     if (!(this.minGap > 0)) throw new RangeError('minGap must be positive')
@@ -247,7 +262,14 @@ export class TrafficSim {
       if (outcome === 'unroutable') unroutable++
     }
 
-    for (const v of this.fleet.values()) if (v.state !== 'moving') v.waitTime += dt
+    for (const v of this.fleet.values()) {
+      if (v.state === 'moving') {
+        v.waitingFor = 0
+      } else {
+        v.waitTime += dt
+        v.waitingFor += dt
+      }
+    }
     this.totalExited += exited
     this.totalUnroutable += unroutable
     return { spawned: this.totalSpawned - spawnedBefore, exited, unroutable }
@@ -336,6 +358,11 @@ export class TrafficSim {
     }
 
     const next = v.steps[v.stepIndex + 1]!
+    const intersection = this.graph.edgesAt(node).length >= 3
+    if (intersection && this.time < (this.junctionFreeAt.get(node) ?? 0) - 1e-9) {
+      v.state = 'waiting'
+      return 'held'
+    }
     if (!this.hasRoomAtEntry(next)) {
       v.state = 'waiting'
       return 'held'
@@ -343,6 +370,7 @@ export class TrafficSim {
     const lane = this.lanes.get(laneKey(current))!
     lane.splice(lane.indexOf(v), 1)
     if (lane.length === 0) this.lanes.delete(laneKey(current))
+    if (intersection && this.junctionClearSec > 0) this.junctionFreeAt.set(node, this.time + this.junctionClearSec)
     v.stepIndex++
     v.progress = 0
     v.state = 'moving'
@@ -403,6 +431,7 @@ export class TrafficSim {
       speed: 0,
       state: 'moving',
       waitTime: 0,
+      waitingFor: 0,
       spawnedAt: this.time,
       routeVersion: this.graph.version,
       failedVersion: -1,
