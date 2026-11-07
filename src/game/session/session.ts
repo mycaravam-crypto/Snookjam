@@ -16,8 +16,8 @@
  * Vue components read snapshot() and call the transition methods.
  */
 import { DEFAULT_CONFIG } from '../config'
-import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from '../roads'
-import { FixedStepClock, TrafficSim } from '../sim'
+import type { ConnectResult, EdgeOptions, NodeId, Point, RoadGraph, RoadLocation } from '../roads'
+import { FixedStepClock, TrafficSim, type SignalOptions } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
@@ -256,6 +256,28 @@ export class GameSession {
    */
   applyConnection(result: ConnectResult): void {
     for (const split of result.splits) this.current.sim.applySplit(split)
+  }
+
+  /**
+   * Places a traffic signal on the junction containing `node` (#32), or
+   * reconfigures the one there. Returns false if that junction cannot take
+   * signals. Like building, only allowed while running or paused.
+   */
+  placeSignal(node: NodeId, options?: SignalOptions): boolean {
+    this.requireBuildable('place signals')
+    return this.current.sim.placeSignal(node, options)
+  }
+
+  /** Removes the signal on the junction containing `node`. Returns whether there was one. */
+  removeSignal(node: NodeId): boolean {
+    this.requireBuildable('remove signals')
+    return this.current.sim.removeSignal(node)
+  }
+
+  private requireBuildable(action: string): void {
+    if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
+      throw new Error(`cannot ${action} while ${this.stateValue}`)
+    }
   }
 
   /** Test hook: sets congestion directly (clamped). */

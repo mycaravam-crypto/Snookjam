@@ -20,6 +20,8 @@ export interface JunctionLane {
   readonly edge: EdgeId
   /** The box node this lane meets. */
   readonly node: NodeId
+  /** Position of that node. */
+  readonly position: Point
   /** Direction of travel along the lane at the box (radians, screen/world y down). */
   readonly heading: number
 }
@@ -68,8 +70,8 @@ export function describeJunction(
       if (members.has(other) && other !== n) continue
       const q = graph.getNode(other)!.position
       const outward = Math.atan2(q.y - node.position.y, q.x - node.position.x)
-      approaches.push({ edge: edge.id, node: n, heading: normalizeAngle(outward + Math.PI) })
-      exits.push({ edge: edge.id, node: n, heading: outward })
+      approaches.push({ edge: edge.id, node: n, position: node.position, heading: normalizeAngle(outward + Math.PI) })
+      exits.push({ edge: edge.id, node: n, position: node.position, heading: outward })
     }
   }
   const byId = (a: JunctionLane, b: JunctionLane) => a.edge - b.edge || a.node - b.node
