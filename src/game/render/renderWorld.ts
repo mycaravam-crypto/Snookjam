@@ -1,7 +1,7 @@
 import type { Point, World } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
-import { COLORS, FIELD_COLORS, FONT_FAMILY, ROOF_COLORS, TERRAIN_COLORS } from './palette'
+import { COLORS, CITY_ROOF_COLORS, DESERT_ROOF_COLORS, FIELD_COLORS, FONT_FAMILY, ROOF_COLORS, THEME_TERRAIN_COLORS } from './palette'
 import { strokeRoads } from './roadStyle'
 
 /** The subset of CanvasRenderingContext2D the world renderer uses. */
@@ -103,10 +103,10 @@ function drawTerrain(ctx: RenderContext, world: World, v: Viewport): void {
       // Decorations below are laid out in screen space, so they stay upright
       // whether or not the map is rotated.
       const { x, y } = worldRectToScreen(v, tx, ty, 1, 1)
-      let base: string = TERRAIN_COLORS[terrain]
+      let base: string = THEME_TERRAIN_COLORS[world.theme][terrain]
       if (terrain === 'field') {
         // Patchwork: neighbouring 3×3 blocks of farmland grow different crops.
-        base = pick(FIELD_COLORS, mixSeed(world.seed, Math.floor(tx / 3) + Math.floor(ty / 3) * 1009, 9) / 4294967296)
+        base = world.theme === 'city' ? '#cbd2d5' : world.theme === 'desert' ? pick(['#e6c785', '#dfbd7b', '#f0d69a'], tileNoise(world, i, 9)) : pick(FIELD_COLORS, mixSeed(world.seed, Math.floor(tx / 3) + Math.floor(ty / 3) * 1009, 9) / 4294967296)
       } else if (terrain === 'water') {
         const open = !isWater(tx - 1, ty) || !isWater(tx + 1, ty) || !isWater(tx, ty - 1) || !isWater(tx, ty + 1)
         if (!open) base = COLORS.waterDeep
@@ -118,7 +118,7 @@ function drawTerrain(ctx: RenderContext, world: World, v: Viewport): void {
         ctx.fillStyle = COLORS.fieldFurrow
         const lw = Math.max(1, s * 0.1)
         for (let k = 1; k < 4; k++) ctx.fillRect(x, y + (k * s) / 4 - lw / 2, size, lw)
-      } else if (terrain === 'forest' && !world.road[i]) {
+      } else if (terrain === 'forest' && !world.road[i] && world.theme !== 'desert') {
         const n = tileNoise(world, i, 6) < 0.5 ? 2 : 1
         for (let k = 0; k < n; k++) {
           trees.push({
@@ -127,7 +127,12 @@ function drawTerrain(ctx: RenderContext, world: World, v: Viewport): void {
             r: s * (n === 1 ? 0.42 : 0.3) * (0.85 + 0.3 * tileNoise(world, i, 8 + k)),
           })
         }
-      } else if (terrain === 'grass' && !world.road[i]) {
+      } else if (terrain === 'forest' && !world.road[i] && world.theme === 'desert') {
+        // Sparse desert scrub and exposed rocks instead of dense tree canopies.
+        ctx.fillStyle = tileNoise(world, i, 21) > 0.5 ? '#756346' : '#a58a5c'
+        const r = s * (0.12 + tileNoise(world, i, 22) * 0.12)
+        ctx.fillRect(x + s * 0.35, y + s * 0.45, r * 1.8, r)
+      } else if (terrain === 'grass' && !world.road[i] && world.theme === 'countryside') {
         const n = tileNoise(world, i, 10)
         if (n < 0.3) {
           // A small tuft of grass.
@@ -207,7 +212,7 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
         if (world.road[i]) continue
         const { x, y } = worldRectToScreen(v, tx + dx, ty + dy, 1, 1)
         const inset = s * (0.16 + 0.08 * tileNoise(world, i, 4))
-        drawHouse(ctx, x + inset, y + inset, s - 2 * inset, pick(ROOF_COLORS, tileNoise(world, i, 16)))
+        drawHouse(ctx, x + inset, y + inset, s - 2 * inset, pick(world.theme === 'city' ? CITY_ROOF_COLORS : world.theme === 'desert' ? DESERT_ROOF_COLORS : ROOF_COLORS, tileNoise(world, i, 16)))
       }
     }
     if (labels) {
