@@ -16,7 +16,7 @@ function ticks(s: GameSession, seconds: number): void {
 }
 
 describe('traffic density progression', () => {
-  it('starts with meaningful traffic and scales targets up to 500 vehicles', () => {
+  it('starts with meaningful traffic and scales targets up to 400 vehicles', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 8].map(targetVehiclesFor)).toEqual([
       80, 120, 160, 220, 300, 400, 400, 400,
     ])
@@ -34,7 +34,7 @@ describe('traffic density progression', () => {
     s.start()
     ticks(s, 10)
     expect(s.snapshot().activeVehicles).toBeGreaterThan(20)
-    expect(s.snapshot().activeVehicleTarget).toBe(100)
+    expect(s.snapshot().activeVehicleTarget).toBe(80)
   })
 })
 
