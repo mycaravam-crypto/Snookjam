@@ -698,15 +698,21 @@ export class TrafficSim {
    * planning safety margin), because the latter can stop traffic too early
    * and turn a safe close pass into artificial gridlock.
    */
-  private wouldCollide(v: MutableVehicle, progress: number): boolean {
+  private wouldCollide(v: MutableVehicle, progress: number, occupied: ReadonlyMap<number, FootprintSnapshot>): boolean {
     const proposed = this.footprintAt(v, v.stepIndex, progress, 0)
-    const current = this.footprintAt(v, v.stepIndex, v.progress, 0)
-    for (const other of this.fleet.values()) {
-      if (other === v) continue
-      const occupied = this.footprintAt(other, other.stepIndex, other.progress, 0)
+    const current = occupied.get(v.id) ?? snapshotFootprint(this.footprintAt(v, v.stepIndex, v.progress, 0))
+    const proposedBounds = snapshotFootprint(proposed)
+    for (const [id, other] of occupied) {
+      if (id === v.id) continue
+      // Most vehicles are nowhere near this movement. Reject distant pairs
+      // before running the comparatively expensive separating-axis test.
+      const dx = proposedBounds.x - other.x
+      const dy = proposedBounds.y - other.y
+      const reach = proposedBounds.radius + other.radius
+      if (dx * dx + dy * dy > reach * reach) continue
       // Existing overlaps can be caused by a road being added around moving
       // traffic. Let those vehicles move apart; never create a new overlap.
-      if (rectanglesOverlap(proposed, occupied) && !rectanglesOverlap(current, occupied)) return true
+      if (rectanglesOverlap(proposed, other.corners) && !rectanglesOverlap(current.corners, other.corners)) return true
     }
     return false
   }
@@ -785,9 +791,20 @@ private footprintAt(v: MutableVehicle, stepIndex: number, progress: number, safe
     this.refreshJunctions()
     this.updateJunctions(dt)
 
-    // 1. Movement within lanes, front to back.
+    // 1. Movement within lanes, front to back. Vehicles already inside a
+    //    junction move first, so approaching traffic sees their cleared
+    //    positions instead of stopping behind a vehicle that is leaving.
+    const occupied = new Map<number, FootprintSnapshot>(
+      [...this.fleet.values()].map((v) => [v.id, snapshotFootprint(this.footprintAt(v, v.stepIndex, v.progress, 0))]),
+    )
     const atEnd: MutableVehicle[] = []
-    for (const lane of this.lanes.values()) {
+    const orderedLanes = [...this.lanes.values()].sort((a, b) => {
+      const av = a[0]
+      const bv = b[0]
+      return Number(bv?.holding !== undefined) - Number(av?.holding !== undefined) ||
+        (av?.id ?? 0) - (bv?.id ?? 0)
+    })
+    for (const lane of orderedLanes) {
       let limit = Infinity
       let leader: MutableVehicle | undefined
       for (const v of lane) {
@@ -805,9 +822,10 @@ private footprintAt(v: MutableVehicle, stepIndex: number, progress: number, safe
         let target = Math.min(edge.length, limit, v.progress + speed * dt)
         // Longitudinal lane gaps do not protect the swept footprint of a
         // turning vehicle. Enforce a final collision check inside junctions.
-        if (target > v.progress && this.wouldCollide(v, target)) target = v.progress
+        if (target > v.progress && this.wouldCollide(v, target, occupied)) target = v.progress
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
+        occupied.set(v.id, snapshotFootprint(this.footprintAt(v, v.stepIndex, v.progress, 0)))
         v.speed = moved / dt
         v.state = moved > 1e-9 ? 'moving' : v.state === 'stuck' ? 'stuck' : 'waiting'
         if (v.progress >= edge.length - 1e-9) atEnd.push(v)
@@ -1542,6 +1560,21 @@ function normalizeVehicleMix(mix: Partial<VehicleMix> = {}): VehicleMix {
 }
 
 type Corner = readonly [number, number]
+
+interface FootprintSnapshot {
+  readonly corners: Corner[]
+  readonly x: number
+  readonly y: number
+  readonly radius: number
+}
+
+/** Cache a footprint's centre and bounding radius for cheap broad-phase checks. */
+function snapshotFootprint(corners: Corner[]): FootprintSnapshot {
+  const x = corners.reduce((sum, p) => sum + p[0], 0) / corners.length
+  const y = corners.reduce((sum, p) => sum + p[1], 0) / corners.length
+  const radius = Math.max(...corners.map(([px, py]) => Math.hypot(px - x, py - y)))
+  return { corners, x, y, radius }
+}
 
 /** Separating-axis test for two convex quadrilaterals. */
 function rectanglesOverlap(A: readonly Corner[], B: readonly Corner[]): boolean {
