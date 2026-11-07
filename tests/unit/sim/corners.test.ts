@@ -51,7 +51,7 @@ describe('continuous corner driving', () => {
     const profile = VEHICLE_PROFILES.car
     for (let i = 1; i < speeds.length; i++) {
       expect(speeds[i]! - speeds[i - 1]!).toBeLessThanOrEqual(profile.accel * DT + 1e-9)
-      expect(speeds[i - 1]! - speeds[i]!).toBeLessThanOrEqual(profile.decel * DT + 1e-9)
+      expect(speeds[i - 1]! - speeds[i]!, `tick ${i}: ${speeds[i - 1]} -> ${speeds[i]}`).toBeLessThanOrEqual(profile.decel * DT + 1e-9)
     }
     expect(Math.min(...speeds)).toBeLessThan(1.95)
     expect(speeds.at(-1)).toBeCloseTo(2, 1)
