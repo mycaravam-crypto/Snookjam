@@ -24,7 +24,7 @@ describe('traffic density progression', () => {
     expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 80, activeVehicles: 0, pendingVehicles: 16 })
     expect(s.sim.maxVehicles).toBe(80)
     expect(maxVehiclesFor(s.balance, 6)).toBe(400)
-    expect(s.sim.spawnIntervalSec).toBeCloseTo(1.8)
+    expect(s.sim.spawnIntervalSec).toBeCloseTo(2.2)
     expect(s.world.settlements).toHaveLength(5)
     expect(s.world.portals).toHaveLength(4)
   })
