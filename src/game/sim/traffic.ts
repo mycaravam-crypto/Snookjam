@@ -31,8 +31,9 @@
  *   smoothed lane curve and reduce speed for its radius, but never reserve or
  *   stop at a junction box. Dead ends also have no junction limit.
  * - Routes are re-planned at the next road node (never mid-edge) when the
- *   graph has changed since the route was planned. A vehicle with no route
- *   waits at that node in the explicit `stuck` state until the graph changes.
+ *   graph has changed since the route was planned. Vehicles with no route wait
+ *   at that node in the explicit `stuck` state and are retried as soon as the
+ *   graph changes, independently of the normal movement/junction pipeline.
  * - Spawns are queued as "pending" and released at a portal when its entry
  *   lane has room, so blocked tunnels build up incoming pressure instead of
  *   dropping traffic.
@@ -1000,6 +1001,7 @@ export class TrafficSim {
     // 0. Junction boxes: release vehicles that have cleared them, then let
     //    waiting vehicles at stop lines in, oldest first.
     this.refreshJunctions()
+    this.recoverStuckVehicles()
     this.updateJunctions(dt)
 
     // 1. Movement within lanes, front to back.
@@ -1158,6 +1160,8 @@ export class TrafficSim {
     }
     if (!this.remainingValid(v)) {
       v.state = 'stuck'
+      v.speed = 0
+      v.failedVersion = this.graph.version
       return 'held'
     }
 
@@ -1179,6 +1183,23 @@ export class TrafficSim {
     v.state = 'moving'
     this.laneFor(next).push(v)
     return 'moved'
+  }
+
+  /**
+   * Retry vehicles stranded at a road end as soon as the graph changes.
+   * Recovery is deliberately independent of movement: a stuck vehicle has
+   * no room beyond its current edge, so it must not rely on reaching another
+   * junction transition to trigger its own route retry.
+   */
+  private recoverStuckVehicles(): void {
+    for (const v of this.fleet.values()) {
+      if (v.state !== 'stuck' || v.failedVersion === this.graph.version) continue
+      this.replanIfStale(v)
+      if (v.state === 'stuck' && this.remainingValid(v)) {
+        v.state = 'waiting'
+        v.speed = 0
+      }
+    }
   }
 
   /**
