@@ -94,19 +94,26 @@ describe('simplifyPath', () => {
 })
 
 describe('enforceMinSegment', () => {
-  it('drops bends closer than the minimum to their neighbours', () => {
-    const pts = [
+  it('merges short near-collinear segments but keeps a meaningful tight bend', () => {
+    const straight = [
       { x: 0, y: 0 },
-      { x: 0.3, y: 0.3 },
-      { x: 2, y: 1 },
-      { x: 2.2, y: 1.4 },
+      { x: 0.3, y: 0.02 },
+      { x: 2, y: 0 },
+      { x: 2.2, y: 0.01 },
       { x: 4, y: 0 },
     ]
-    expect(enforceMinSegment(pts, 1)).toEqual([
+    expect(enforceMinSegment(straight, 1)).toEqual([
       { x: 0, y: 0 },
-      { x: 2, y: 1 },
       { x: 4, y: 0 },
     ])
+
+    const bend = [
+      { x: 0, y: 0 },
+      { x: 0.4, y: 0 },
+      { x: 0.55, y: 0.35 },
+      { x: 0.8, y: 0.8 },
+    ]
+    expect(enforceMinSegment(bend, 0.5)).toEqual(bend)
   })
 })
 
