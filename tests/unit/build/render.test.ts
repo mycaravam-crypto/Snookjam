@@ -67,10 +67,21 @@ describe('construction rendering', () => {
       [{ x: 2, y: 4 }, { x: 8, y: 4 }],
       [{ x: 5, y: 1 }, { x: 5, y: 7 }],
     ])
-    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(1)
+    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(3)
 
     const bend = recorder()
     strokeRoads(bend.ctx, v, [[{ x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 6 }]])
     expect(bend.calls.filter((call) => call.name === 'arc')).toHaveLength(0)
+  })
+
+  it('blends shared road footprints even when lane markings are hidden', () => {
+    const crossing = recorder()
+    const zoomedOut = { ...v, scale: 5 }
+    strokeRoads(crossing.ctx, zoomedOut, [
+      [{ x: 2, y: 4 }, { x: 8, y: 4 }],
+      [{ x: 5, y: 1 }, { x: 5, y: 7 }],
+    ])
+    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(2)
+    expect(crossing.calls.filter((call) => call.name === 'fill')).toHaveLength(2)
   })
 })
