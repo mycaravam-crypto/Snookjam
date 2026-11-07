@@ -62,7 +62,7 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   // High-density tuning (#50): keep the initial learning curve, then
   // replenish traffic more quickly toward a level-specific active fleet target.
   // Targets grow from 40 vehicles on level 1 to 400 by level 11.
-  baseSpawnIntervalSec: 2.4,
+  baseSpawnIntervalSec: 2.5,
   minSpawnIntervalSec: DEFAULT_CONFIG.minSpawnIntervalSec,
   levelSpawnFactor: 0.75,
   inLevelRampFactor: 0.6,
@@ -84,8 +84,8 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
   blockedRatePerSec: 8,
-  pendingReference: 18,
-  pendingRatePerSec: 2,
+  pendingReference: 6,
+  pendingRatePerSec: 3,
   exitRelief: 0.75,
   flowDecayPerSec: 1.5,
   levelStartGraceSec: 10,
