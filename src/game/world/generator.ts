@@ -28,10 +28,12 @@ export interface WorldOptions {
 export const DEFAULT_WORLD_OPTIONS: WorldOptions = Object.freeze({
   width: 40,
   height: 30,
-  settlementCount: 5,
-  portalCount: 4,
+  // More destinations and tunnel entries create enough road length and
+  // route convergence for dense traffic without shrinking vehicle spacing.
+  settlementCount: 7,
+  portalCount: 6,
   waterLevel: 0.34,
-  settlementSpacing: 8,
+  settlementSpacing: 6,
   maxAttempts: 8,
 })
 
