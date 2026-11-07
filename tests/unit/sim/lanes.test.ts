@@ -13,6 +13,7 @@ import {
   type Vehicle,
 } from '@game/index'
 import { collisions } from './footprint'
+import { buildRoadPath } from '../../../src/game/build/path'
 
 const DT = 0.05
 const random = { next: () => 0.37 }
@@ -103,6 +104,47 @@ describe('following within a lane', () => {
 })
 
 describe('curved roads', () => {
+  it('keeps traffic smooth on a committed freehand S-curve', () => {
+    const path = buildRoadPath(
+      { x: 0, y: 0 },
+      { x: 8, y: 0 },
+      [
+        { x: 1, y: 0.5 },
+        { x: 2, y: 1 },
+        { x: 3, y: 0.5 },
+        { x: 4, y: 0 },
+        { x: 5, y: -0.5 },
+        { x: 6, y: -1 },
+        { x: 7, y: -0.5 },
+      ],
+    )
+    const g = RoadGraph.fromLayout({
+      nodes: [{ id: 0, x: 0, y: 0 }, { id: 1, x: 8, y: 0 }],
+      segments: [],
+    })
+    g.connect({ kind: 'node', node: 0 }, { kind: 'node', node: 1 }, {}, path.slice(1, -1))
+    expect(g.nodeCount).toBeLessThanOrEqual(12)
+
+    let n = 0
+    const sim = new TrafficSim(g, { portals: [0, 1], random: { next: () => (n++ % 3) / 3 }, startingVehicles: 4, spawnIntervalSec: 1.5 })
+    const last = new Map<number, { x: number; y: number; h: number }>()
+    const maxStep = 2 * DT * 1.6
+    step(sim, 600, () => {
+      expect(collisions(sim)).toEqual([])
+      for (const v of sim.vehicles()) {
+        const { position, heading } = sim.lanePositionOf(v)
+        const prev = last.get(v.id)
+        if (prev) {
+          expect(Math.hypot(position.x - prev.x, position.y - prev.y)).toBeLessThanOrEqual(maxStep)
+          const dh = Math.abs(Math.atan2(Math.sin(heading - prev.h), Math.cos(heading - prev.h)))
+          expect(dh).toBeLessThan(0.6)
+        }
+        last.set(v.id, { x: position.x, y: position.y, h: heading })
+      }
+    })
+    expect(sim.stats().totalExited).toBeGreaterThan(5)
+  })
+
   it('moves vehicles continuously through bends, staying in lane', () => {
     // A zig-zag with several bends, traffic both ways.
     const g = RoadGraph.fromLayout({
