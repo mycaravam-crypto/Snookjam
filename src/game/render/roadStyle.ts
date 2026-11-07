@@ -84,14 +84,29 @@ export function strokeRoads(ctx: RenderContext, v: Viewport, lines: readonly (re
     ctx.lineWidth = Math.max(2, s * width)
     traceAll(ctx, v, drawn, offset, offset)
   }
+
+  // Give every shared intersection one continuous footprint. Painting the
+  // kerb and asphalt discs after the road strokes hides overlapping end caps
+  // and seams while preserving the same width as the adjoining road.
+  for (const junction of findJunctions(drawn)) {
+    const p = worldToScreen(v, junction)
+    ctx.fillStyle = COLORS.roadEdge
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, Math.max(1, s * ROAD_EDGE_WIDTH * 0.5), 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = COLORS.road
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, Math.max(1, s * ROAD_SURFACE_WIDTH * 0.5), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
   if (s >= 10) {
     ctx.strokeStyle = COLORS.roadMarking
     ctx.lineWidth = Math.max(1, s * CENTRE_LINE_WIDTH)
     ctx.setLineDash([s * 0.25, s * 0.25])
     traceAll(ctx, v, drawn)
     ctx.setLineDash([])
-    // A small asphalt patch removes crossing centre dashes from the junction
-    // itself. The road edge remains continuous around the outside footprint.
+    // Keep lane markings out of the shared centre of each junction.
     ctx.fillStyle = COLORS.road
     for (const junction of findJunctions(drawn)) {
       const p = worldToScreen(v, junction)
