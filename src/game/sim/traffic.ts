@@ -22,14 +22,14 @@
  *   the gap ahead is at least `minGap`; otherwise it waits, which is how
  *   queues form.
  * - Intersections (nodes where three or more roads meet) have a stop line
- *   `stopDistance` before the node (further back where roads meet at a sharp
- *   angle, or at a bend sharper than a right angle, which also counts as a
- *   junction) and a junction box: one vehicle at a time
+ *   `stopDistance` before the node and a junction box: one vehicle at a time
  *   holds the box, from crossing its stop line until it is `stopDistance`
  *   past the node, and only enters when it has room to leave. Intersections
  *   joined by a road too short to stop between them share one box. A new vehicle
  *   may enter at most every `junctionClearSec`, so busy intersections become
- *   bottlenecks. Bends and dead ends (degree <= 2) have no such limit.
+ *   bottlenecks. Degree-2 bends are continuous road: vehicles follow the
+ *   smoothed lane curve and reduce speed for its radius, but never reserve or
+ *   stop at a junction box. Dead ends also have no junction limit.
  * - Routes are re-planned only at junctions (never mid-edge), when the graph
  *   has changed since the route was planned. A vehicle with no route waits at
  *   its junction in the explicit `stuck` state until the graph changes.
@@ -448,6 +448,37 @@ export class TrafficSim {
     return Math.min(this.geometry.cornerRadius, lenIn / 2, lenOut / 2)
   }
 
+  /**
+   * Speed limit imposed by the next or current smooth bend. The incoming
+   * approach starts braking early enough to reach a comfortable lateral
+   * acceleration at the curve; the outgoing half keeps that limit until the
+   * vehicle has cleared it. This changes speed, never right-of-way.
+   */
+  private cornerSpeedLimit(v: MutableVehicle, profile: VehicleProfile): number {
+    const step = v.steps[v.stepIndex]!
+    const length = this.graph.getEdge(step.edge)!.length
+    let limit = Infinity
+
+    const next = v.steps[v.stepIndex + 1]
+    if (next) {
+      const radius = this.cornerRadiusAt(step, next)
+      if (radius > 0) {
+        const distanceToCurve = Math.max(0, length - radius - v.progress)
+        const curveSpeed = Math.sqrt(2.5 * radius) * profile.speedFactor
+        limit = Math.min(limit, Math.sqrt(curveSpeed * curveSpeed + 2 * profile.decel * distanceToCurve))
+      }
+    }
+
+    const previous = v.stepIndex > 0 ? v.steps[v.stepIndex - 1] : undefined
+    if (previous) {
+      const radius = this.cornerRadiusAt(previous, step)
+      if (radius > 0 && v.progress < radius) {
+        limit = Math.min(limit, Math.sqrt(2.5 * radius) * profile.speedFactor)
+      }
+    }
+    return limit
+  }
+
   /** Point on the turning curve at parameter tau in [0, 1]. */
   private corner(inStep: RouteStep, outStep: RouteStep, r: number, tau: number): { position: Point; heading: number } {
     const node = this.graph.getNode(inStep.to)!.position
@@ -777,7 +808,8 @@ export class TrafficSim {
         // end of its edge when it cannot enter the next lane).
         const profile = VEHICLE_PROFILES[v.kind]
         const room = Math.min(edge.length + (leader === undefined ? this.roomBeyondEdge(v, limit, edge.length) : 0), limit) - v.progress
-        const speed = nextSpeed(v.speed, edge.speedLimit * profile.speedFactor, room, profile.accel, profile.decel, dt)
+        const cruise = Math.min(edge.speedLimit * profile.speedFactor, this.cornerSpeedLimit(v, profile))
+        const speed = nextSpeed(v.speed, cruise, room, profile.accel, profile.decel, dt)
         const target = Math.min(edge.length, limit, v.progress + speed * dt)
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
@@ -1078,11 +1110,11 @@ export class TrafficSim {
       sharpest.set(n.id, nodeMin)
     }
     this.stopDistances = stops
-    // Junctions: 3+ roads, a tunnel that 2+ roads merge into, or a bend
-    // sharper than a right angle (its two road surfaces overlap).
+    // Only actual intersections and multi-road tunnel mouths reserve a
+    // junction box. A degree-2 bend has no crossing traffic: treating it as
+    // a junction creates an artificial stop in an otherwise continuous road.
     const portals = new Set(this.portals)
-    const isJunction = (n: NodeId) =>
-      degree(n) >= 3 || (degree(n) >= 2 && (portals.has(n) || sharpest.get(n)! < Math.PI / 2 - 1e-6))
+    const isJunction = (n: NodeId) => degree(n) >= 3 || (degree(n) >= 2 && portals.has(n))
     const intersections = this.graph
       .nodes()
       .filter((n) => isJunction(n.id))
