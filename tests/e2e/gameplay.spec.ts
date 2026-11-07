@@ -745,8 +745,8 @@ test.describe('road editing (#33)', () => {
 })
 
 /**
- * The denser generated network is tuned for a 100-vehicle early-game fleet.
- * Seed 36 is used here for a stable, representative browser rendering load.
+ * The early-game target is 80 vehicles. Seed 36 is used here for a stable,
+ * representative browser rendering load at 100 active vehicles.
  */
 const PERF_URL = '?seed=36&test'
 
