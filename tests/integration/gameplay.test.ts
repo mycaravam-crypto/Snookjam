@@ -112,7 +112,7 @@ describe(`gameplay integration (seed ${SEED})`, () => {
     expect(withRoad.congestion).toBeLessThan(without.congestion)
   })
 
-  it('restarts after a lost run with no built roads, vehicles or time carried over', () => {
+  it('retries the failed level with no built roads, vehicles or failed-level time carried over', () => {
     const s = reachLevel3()
     for (let i = 0; i < 20 / DT; i++) {
       if (i === BUILD_AT_SEC / DT) buildRoad(s)
@@ -123,17 +123,27 @@ describe(`gameplay integration (seed ${SEED})`, () => {
     s.resume()
     s.tick(DT)
     expect(s.state).toBe('gameOver')
+    const failed = s.snapshot()
+    const completedTime = failed.totalTime - failed.levelTime
 
     s.restart()
-    const fresh = new GameSession({ seed: SEED })
-    fresh.start()
+    const fresh = reachLevel3()
+    expect(s.snapshot()).toMatchObject({
+      state: 'running',
+      level: 3,
+      levelTime: 0,
+      totalTime: completedTime,
+      congestion: 0,
+      activeVehicles: 0,
+    })
+    expect(s.world.seed).toBe(fresh.world.seed)
     expect(s.graph.edgeCount).toBe(fresh.graph.edgeCount)
     expect(s.graph.nodeCount).toBe(fresh.graph.nodeCount)
+    expect(s.sim.stats().totalSpawned).toBe(0)
     for (let i = 0; i < 30 / DT; i++) {
       s.tick(DT)
       fresh.tick(DT)
     }
-    expect(s.snapshot()).toEqual(fresh.snapshot())
     expect(JSON.stringify(s.sim.vehicles())).toBe(JSON.stringify(fresh.sim.vehicles()))
   })
 })

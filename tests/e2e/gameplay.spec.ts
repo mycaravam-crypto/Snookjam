@@ -216,24 +216,39 @@ test.describe('critical player flow', () => {
     expect((await state(page)).levelTime).toBeGreaterThan(7)
   })
 
-  test('recovers cleanly from gridlock', async ({ page }) => {
+  test('retries the failed level and preserves earlier progress', async ({ page }) => {
     await play(page)
+    const completed = await page.evaluate(() => {
+      const s = (window as any).__snookjam.session.value
+      for (let i = 0; i < 20 * s.balance.levelDurationSec + 1 && s.state === 'running'; i++) {
+        s.tick()
+        s.setCongestionForTesting(0)
+      }
+      if (s.state === 'levelComplete') s.nextLevel()
+      return { level: s.level, seed: s.world.seed, snapshot: s.snapshot() }
+    })
+    expect(completed.level).toBe(2)
+    await expect(page.getByTestId('hud-level')).toHaveText('2')
     const initial = await graphInfo(page)
-    await drag(page, road.from, road.to)
-    await expect(page.getByTestId('build-status')).toContainText('Road built')
-    await fastForward(page, 15, 's.setCongestionForTesting(100)')
+
+    await fastForward(page, 1, 's.setCongestionForTesting(100)')
     await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'gameOver')
     await expect(page.getByRole('heading', { name: 'Gridlock!' })).toBeVisible()
+    await expect(page.getByTestId('overlay-restart')).toHaveText('Retry level 2')
 
     await page.getByTestId('overlay-restart').click()
     await expect(page.getByTestId('overlay')).toHaveCount(0)
-    await expect(page.getByTestId('hud-level')).toHaveText('1')
+    await expect(page.getByTestId('hud-level')).toHaveText('2')
     const restarted = await state(page)
     expect(restarted.state).toBe('running')
     expect(restarted.congestion).toBe(0)
     expect(restarted.levelTime).toBeLessThan(1)
-    expect(restarted.vehiclesExited).toBe(0)
-    expect((await graphInfo(page)).edges).toBe(initial.edges) // built road is gone
+    expect(restarted.totalTime).toBeCloseTo(completed.snapshot.totalTime, 1)
+    expect(restarted.vehiclesExited).toBe(completed.snapshot.vehiclesExited)
+    expect(restarted.score).toBe(completed.snapshot.score)
+    expect(restarted.coins).toBe(completed.snapshot.coins)
+    expect(restarted.seed).toBe(completed.seed)
+    expect((await graphInfo(page)).edges).toBe(initial.edges)
   })
 
 })
