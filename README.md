@@ -62,6 +62,14 @@ or the app layer.
 ## Controls
 
 - **Start:** press **Play** on the title screen. The run starts immediately.
+- **Modes (#35):** **Play** is the classic game: survive each level's timer
+  below 100% congestion. **Objectives** adds goals per level (complete N
+  journeys, keep throughput up, keep the average wait down), shown with
+  progress bars under the HUD; every goal must be met when the timer runs
+  out, or the run ends. Score is 10 points per completed journey plus 50 per
+  objective met, with no hidden bonuses. **Sandbox** has no timer, no
+  objectives and no gridlock loss. Objective data, the scoring rule and the
+  balancing notes are in `src/game/session/objectives.ts`.
 - **Pause / resume:** the Pause button in the top bar, or <kbd>P</kbd> / <kbd>Esc</kbd>.
   The game also pauses when the tab is hidden. You can still build while paused.
 - **HUD:** level, time survived out of the level target, active cars, and the

@@ -917,3 +917,131 @@ kbd {
     font-size: 0.9rem;
   }
 }
+
+/* Game modes and objectives (#35) */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.modes button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 13em;
+  --btn-bg: var(--panel-2);
+  --btn-fg: var(--fg);
+  --btn-edge: #0a1208;
+  border: 1px solid var(--border);
+}
+
+.modes button span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.objectives {
+  order: 10;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.objective {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0 10px;
+  flex: 1 1 200px;
+  padding: 4px 10px 8px;
+  border-radius: 10px;
+  background: #00000040;
+  font-size: 0.8rem;
+}
+
+.objective-goal {
+  font-weight: 600;
+}
+
+.objective-icon {
+  margin-right: 2px;
+}
+
+.objective-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-track {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #ffffff1f;
+  overflow: hidden;
+}
+
+.objective-track span {
+  display: block;
+  height: 100%;
+  background: var(--warn);
+}
+
+.objective[data-on-track='true'] .objective-track span {
+  background: var(--ok);
+}
+
+.objective[data-status='met'] {
+  color: var(--ok);
+}
+
+.objective[data-status='failed'] {
+  color: var(--crit);
+}
+
+.overlay-objectives {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.overlay-objectives li[data-status='met'] {
+  color: var(--accent-deep);
+}
+
+.overlay-objectives li[data-status='failed'] {
+  color: #c0392b;
+}
+
+@media (max-width: 560px) {
+  .objectives {
+    gap: 4px;
+  }
+  .objective {
+    flex-basis: 140px;
+    padding: 3px 8px 7px;
+    font-size: 0.7rem;
+  }
+}
