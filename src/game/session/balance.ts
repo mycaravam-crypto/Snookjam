@@ -59,15 +59,15 @@ export interface BalanceConfig {
 
 export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   levelDurationSec: DEFAULT_CONFIG.levelDurationSec,
-  // High-density tuning (#50): keep the initial learning curve, then
-  // replenish traffic more quickly toward a level-specific active fleet target.
-  // Targets grow from 40 vehicles on level 1 to 400 by level 11.
-  baseSpawnIntervalSec: 2.5,
-  minSpawnIntervalSec: DEFAULT_CONFIG.minSpawnIntervalSec,
-  levelSpawnFactor: 0.75,
+  // Dense-traffic follow-up (#53): the generated network now has more
+  // settlements and tunnel portals, so it can physically carry a larger fleet.
+  // Keep replenishment continuous; congestion still depends on waiting, not count.
+  baseSpawnIntervalSec: 0.24,
+  minSpawnIntervalSec: 0.08,
+  levelSpawnFactor: 0.85,
   inLevelRampFactor: 0.6,
-  startingVehicles: DEFAULT_CONFIG.startingVehicles,
-  startingVehiclesPerLevel: 2,
+  startingVehicles: 24,
+  startingVehiclesPerLevel: 8,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
@@ -134,12 +134,11 @@ export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix
   return { car, van, truck }
 }
 
-/** Active traffic target by level. Later levels continue climbing to a 400-car ceiling. */
+/** Active traffic target by level. Later levels reach a 500-car safety ceiling. */
 export function targetVehiclesFor(level: number): number {
-  const targets = [40, 70, 100, 150, 200]
+  const targets = [100, 150, 220, 300, 400, 500]
   const normalizedLevel = Math.max(1, Math.floor(level))
-  if (normalizedLevel <= targets.length) return targets[normalizedLevel - 1]!
-  return Math.min(400, 250 + (normalizedLevel - 6) * 30)
+  return targets[Math.min(normalizedLevel - 1, targets.length - 1)]!
 }
 
 export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
@@ -152,7 +151,7 @@ export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
   // scenario) must always fit inside the active-vehicle limit.
   const requestedStartingFleet = balance.startingVehicles +
     balance.startingVehiclesPerLevel * Math.max(0, level - 1)
-  return Math.min(400, Math.max(target, requestedStartingFleet))
+  return Math.min(500, Math.max(target, requestedStartingFleet))
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
