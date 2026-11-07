@@ -24,9 +24,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # build already runs vue-tsc; do not type-check the same project twice.
-      - run: npm test
-      - run: npm run build
+      # Unit tests and the typechecked production build are independent.
+      # Run them together so CI spends less time waiting on sequential work.
+      - name: Run unit tests and production build in parallel
+        shell: bash
+        run: |
+          npm test &
+          unit_pid=$!
+          npm run build &
+          build_pid=$!
+          result=0
+          wait "$unit_pid" || result=$?
+          wait "$build_pid" || result=$?
+          exit "$result"
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v4
