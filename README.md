@@ -75,11 +75,16 @@ or the app layer.
 - **Build a road:** press on an existing road, draw the road along any path
   (around a lake, say) and release on or near another road. Works with mouse,
   touch and stylus (Pointer Events).
-- **Snapping is generous:** both ends snap to the nearest point *along* a road
-  within 1¼ tiles (`DEFAULT_SNAP_DISTANCE`, configurable through
-  `constructionOptions({ snapDistance })`), and to a junction or road end
-  within ½ a tile. While the end is in range, a ring marks where the road will
-  attach: a square for a junction, a circle for a point along a road.
+- **Snapping is generous:** the start snaps to the nearest point *along* a
+  road within 1¼ tiles (`DEFAULT_SNAP_DISTANCE`, `snapDistance`) and the
+  release end within 2 tiles (`endSnapDistance`); either snaps to a junction
+  or road end within ½ a tile. Once the end has snapped to a road it stays on
+  that road until the pointer is 2½ tiles away (`endSnapRelease`), so jitter
+  near another road does not make it jump. All are configurable through
+  `constructionOptions`. While the end is in range, a ring marks where the
+  road will attach: a square for a junction, a circle for a point along a road.
+- Releasing away from any road builds a dead end, which later roads can start
+  from or connect to. Crossing an existing road creates a junction there.
 - The drawn trajectory is resampled, smoothed to remove jitter and simplified
   into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
   graph node.

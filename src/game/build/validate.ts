@@ -15,6 +15,12 @@ export interface ConstructionOptions extends PathOptions {
   readonly snapDistance: number
   /** Release-end radius (tiles); wider to make connections forgiving. */
   readonly endSnapDistance: number
+  /**
+   * Once the end has snapped to a road, it stays on that road until the
+   * pointer is this far (tiles) from it, so jitter near competing roads does
+   * not make the preview jump. Must be at least `endSnapDistance`.
+   */
+  readonly endSnapRelease: number
   /** Within this distance (tiles) of a node, snap to the node itself. */
   readonly nodeSnap: number
   /** Shortest road the player may build, in tiles. */
@@ -37,6 +43,7 @@ export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   ...DEFAULT_PATH_OPTIONS,
   snapDistance: DEFAULT_SNAP_DISTANCE,
   endSnapDistance: 2,
+  endSnapRelease: 2.5,
   nodeSnap: 0.5,
   minLength: 1,
   maxLength: Infinity,
@@ -54,6 +61,9 @@ export function constructionOptions(overrides: Partial<ConstructionOptions> = {}
   }
   if (!(options.endSnapDistance > 0) || !Number.isFinite(options.endSnapDistance)) {
     throw new RangeError('endSnapDistance must be a positive number')
+  }
+  if (!(options.endSnapRelease >= options.endSnapDistance) || !Number.isFinite(options.endSnapRelease)) {
+    throw new RangeError('endSnapRelease must be a finite number of at least endSnapDistance')
   }
   if (options.nodeSnap < 0 || !(options.minSegmentLength > 0) || options.sampleSpacing < 0 || !(options.resampleSpacing > 0)) {
     throw new RangeError('invalid construction options')
@@ -123,6 +133,20 @@ export function snapToRoad(
 }
 
 /**
+ * Snaps the release end: to the latched road while within `endSnapRelease`,
+ * otherwise to the nearest road within `endSnapDistance`.
+ */
+export function snapEnd(
+  graph: RoadGraph,
+  point: Point,
+  options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
+  latch?: RoadLocation,
+): NearestLocation | undefined {
+  const latched = latch && graph.nearestLocationOn(latch, point, options.endSnapRelease, options.nodeSnap)
+  return latched || graph.nearestLocation(point, options.endSnapDistance, options.nodeSnap)
+}
+
+/**
  * Validates a straight road from `start` to `end` (world points, unsnapped).
  * Both ends must snap to the existing network; the road between the snapped
  * positions must stay on the map, avoid impassable terrain, not cross other
@@ -147,6 +171,10 @@ export function checkConnection(
  * polyline whose ends are snapped to the network. Every segment is checked
  * against terrain and existing roads, bends must keep `clearance` from other
  * roads, and the road may not cross itself. Never mutates the graph.
+ *
+ * `endLatch` is where the end snapped on the previous preview of the same
+ * gesture: while the pointer stays within `endSnapRelease` of that road, the
+ * end keeps snapping to it (hysteresis).
  */
 export function checkPath(
   world: World,
@@ -155,10 +183,11 @@ export function checkPath(
   end: Point,
   samples: readonly Point[],
   options: ConstructionOptions = DEFAULT_CONSTRUCTION_OPTIONS,
+  endLatch?: RoadLocation,
 ): PathCheck {
   const from = snapToRoad(graph, start, options)
   if (!from) return { ok: false, reason: 'not-on-road', path: [] }
-  const to = graph.nearestLocation(end, options.endSnapDistance, options.nodeSnap)
+  const to = snapEnd(graph, end, options, endLatch)
   const path = buildRoadPath(from.position, to?.position ?? end, samples, options)
   const fail = (reason: RejectionReason): PathCheck => ({ ok: false, reason, from, ...(to ? { to } : {}), path })
 

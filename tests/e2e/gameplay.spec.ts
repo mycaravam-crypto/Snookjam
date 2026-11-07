@@ -91,10 +91,73 @@ function freehandRoad(world: World): { trace: Point[]; bends: number } {
   throw new Error(`no freehand road on seed ${SEED}`)
 }
 
+/** Straight-line samples between two points, as a drag records them. */
+const line = (a: Point, b: Point, n = 10) =>
+  Array.from({ length: n - 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * (i + 1)) / n, y: a.y + ((b.y - a.y) * (i + 1)) / n }))
+
+/**
+ * Open-endpoint construction (#29) on the level-1 map: a straight road from a
+ * road node to open terrain (a dead end, with no road within 3 tiles of its
+ * end), and a second road that later starts at that dead end and connects to
+ * another road node.
+ */
+function deadEndThenConnect(world: World): { deadEnd: { from: Point; to: Point }; connect: { from: Point; to: Point } } {
+  const graph = createRoadGraph(world)
+  for (const start of graph.nodes().map((n) => n.position)) {
+    for (let k = 0; k < 16; k++) {
+      const angle = (k / 16) * 2 * Math.PI
+      const end = { x: start.x + 5 * Math.cos(angle), y: start.y + 5 * Math.sin(angle) }
+      if (graph.nearestLocation(end, 3)) continue
+      const check = checkPath(world, graph, start, end, line(start, end), WIDE_JOINS)
+      if (!check.ok || check.to) continue
+      const trial = createRoadGraph(world)
+      trial.connectToPoint(check.from.location, end, {}, check.path.slice(1, -1))
+      for (const target of trial.nodes().map((n) => n.position)) {
+        const d = Math.hypot(target.x - end.x, target.y - end.y)
+        if (d < 3 || d > 9) continue
+        const next = checkPath(world, trial, end, target, line(end, target), WIDE_JOINS)
+        if (next.ok && next.to && next.path.length === 2) {
+          return { deadEnd: { from: start, to: end }, connect: { from: end, to: target } }
+        }
+      }
+    }
+  }
+  throw new Error(`no dead-end road on seed ${SEED}`)
+}
+
+/** Nodes where at least four roads meet. */
+const fourWayNodes = (graph: { nodes(): { id: number }[]; edgesAt(id: number): unknown[] }) =>
+  graph.nodes().filter((n) => graph.edgesAt(n.id).length >= 4).length
+
+/**
+ * A straight road between two road nodes that crosses an existing road
+ * between its ends, so construction must create a new four-way junction.
+ */
+function crossingRoad(world: World): { from: Point; to: Point } {
+  const graph = createRoadGraph(world)
+  const before = fourWayNodes(graph)
+  const nodes = graph.nodes().map((n) => n.position)
+  for (const a of nodes) {
+    for (const b of nodes) {
+      const len = Math.hypot(a.x - b.x, a.y - b.y)
+      if (len < 4 || len > 14) continue
+      const check = checkPath(world, graph, a, b, line(a, b), WIDE_JOINS)
+      if (!check.ok || !check.to || check.path.length !== 2) continue
+      const trial = createRoadGraph(world)
+      const result = trial.connect(check.from.location, check.to.location)
+      const interior = result.nodes.slice(1, -1).filter((id) => trial.edgesAt(id).length >= 4)
+      if (interior.length > 0 && fourWayNodes(trial) > before) return { from: a, to: b }
+    }
+  }
+  throw new Error(`no crossing road on seed ${SEED}`)
+}
+
 const world = generateWorld(SEED)
 const road = usefulRoad(world)
 const curve = freehandRoad(world)
 const offRoad = offRoadPoint(world)
+const openEnded = deadEndThenConnect(world)
+const crossing = crossingRoad(world)
 
 /** Page client coordinates of a world point, via the app's own mapping (handles portrait rotation). */
 async function toScreen(page: Page, point: Point) {
@@ -263,6 +326,46 @@ test.describe('critical player flow', () => {
     expect((await graphInfo(page)).edges).toBe(before.edges)
     const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
     expect(scroll).toEqual({ y: 0, selection: '' })
+  })
+
+  test('4d. draws a dead-end road, then connects to it later (#29)', async ({ page }) => {
+    await play(page)
+    const degreeNear = (p: Point) =>
+      page.evaluate((p) => {
+        const g = (window as any).__snookjam.session.value.graph
+        const node = g.nodes().find((n: any) => Math.hypot(n.position.x - p.x, n.position.y - p.y) < 0.05)
+        return node ? g.edgesAt(node.id).length : 0
+      }, p)
+    const before = await graphInfo(page)
+    await drag(page, openEnded.deadEnd.from, openEnded.deadEnd.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+    expect((await graphInfo(page)).edges).toBeGreaterThan(before.edges)
+    // The free end is a real graph node with one road: a dead end.
+    expect(await degreeNear(openEnded.deadEnd.to)).toBe(1)
+
+    await drag(page, openEnded.connect.from, openEnded.connect.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+    // The dead end now continues into the second road.
+    expect(await degreeNear(openEnded.deadEnd.to)).toBe(2)
+  })
+
+  test('4e. a road crossing an existing road forms a junction (#29)', async ({ page }) => {
+    await play(page)
+    const junctions = () =>
+      page.evaluate(() => {
+        const g = (window as any).__snookjam.session.value.graph
+        return g.nodes().filter((n: any) => g.edgesAt(n.id).length >= 4).length
+      })
+    const before = await junctions()
+    await drag(page, crossing.from, crossing.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+    expect(await junctions()).toBeGreaterThan(before)
+    // Traffic keeps running through the new junction without errors.
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    await fastForward(page, 20)
+    expect(errors).toEqual([])
+    expect((await state(page)).state).toBe('running')
   })
 
   test('6. pauses and resumes', async ({ page }) => {
