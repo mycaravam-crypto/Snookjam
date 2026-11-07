@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnection, ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
-import { targetVehiclesFor } from '../../../src/game/session/balance'
+import { maxVehiclesFor, targetVehiclesFor } from '../../../src/game/session/balance'
 
 const DT = 1 / 20
 
@@ -23,6 +23,7 @@ describe('traffic density progression', () => {
     const s = new GameSession({ seed: 42 })
     expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 100, activeVehicles: 0, pendingVehicles: 24 })
     expect(s.sim.maxVehicles).toBe(100)
+    expect(maxVehiclesFor(s.balance, 6)).toBe(500)
     expect(s.sim.spawnIntervalSec).toBeCloseTo(0.24)
     expect(s.world.settlements).toHaveLength(7)
     expect(s.world.portals).toHaveLength(6)
