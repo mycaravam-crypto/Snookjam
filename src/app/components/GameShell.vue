@@ -399,8 +399,6 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
           Remove
         </button>
         <span class="tools-gap" aria-hidden="true" />
-        <button type="button" data-testid="save-game" @click="saveGame">Save</button>
-        <button type="button" data-testid="load-game" :disabled="!hasSave" @click="loadGame">Load</button>
         <button
           type="button"
           class="tool-icon"
@@ -514,6 +512,9 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
       <p v-if="interactive" class="status" data-testid="build-status" role="status" aria-live="polite">{{ status }}</p>
       <GameOverlay
         :snapshot="snapshot"
+        :has-save="hasSave"
+        @save="saveGame"
+        @load="loadGame"
         @resume="game.resume()"
         @restart="game.restart()"
         @next-level="game.nextLevel()"

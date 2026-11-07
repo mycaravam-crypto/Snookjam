@@ -177,13 +177,14 @@ test.describe('critical player flow', () => {
     await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
 
     const before = await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.toSaveData()))
-    await page.getByTestId('save-game').click()
+    await page.getByTestId('overlay-save').click()
     await expect(page.getByTestId('build-status')).toContainText('Game saved')
 
     await page.reload()
     await play(page)
-    await expect(page.getByTestId('load-game')).toBeEnabled()
-    await page.getByTestId('load-game').click()
+    await page.getByTestId('hud-pause').click()
+    await expect(page.getByTestId('overlay-load')).toBeEnabled()
+    await page.getByTestId('overlay-load').click()
     await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
     const after = await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.toSaveData()))
     expect(JSON.parse(after)).toEqual(JSON.parse(before))
