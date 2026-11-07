@@ -692,6 +692,27 @@ export class TrafficSim {
     return false
   }
 
+  /**
+   * Final footprint-level guard for movements inside a junction box.
+   * Lane following protects vehicles on the same lane; this also protects
+   * crossing and turning paths on different approaches.
+   */
+  private wouldCollideInJunction(v: MutableVehicle, progress: number): boolean {
+    const step = v.steps[v.stepIndex]!
+    const key = this.junctionKeys.get(step.to) ?? this.junctionKeys.get(step.from)
+    if (key === undefined) return false
+    const proposed = this.footprintAt(v, v.stepIndex, progress)
+    const current = this.footprintAt(v, v.stepIndex, v.progress)
+    for (const other of this.fleet.values()) {
+      if (other === v) continue
+      const otherStep = other.steps[other.stepIndex]!
+      if (this.junctionKeys.get(otherStep.from) !== key && this.junctionKeys.get(otherStep.to) !== key) continue
+      const occupied = this.footprintAt(other, other.stepIndex, other.progress)
+      if (rectanglesOverlap(proposed, occupied) && !rectanglesOverlap(current, occupied)) return true
+    }
+    return false
+  }
+
   private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
     const { position: p, heading: h } = this.lanePositionOf({ ...v, stepIndex, progress })
     const profile = VEHICLE_PROFILES[v.kind]
@@ -783,7 +804,10 @@ export class TrafficSim {
         const profile = VEHICLE_PROFILES[v.kind]
         const room = Math.min(edge.length + (leader === undefined ? this.roomBeyondEdge(v, limit, edge.length) : 0), limit) - v.progress
         const speed = nextSpeed(v.speed, edge.speedLimit * profile.speedFactor, room, profile.accel, profile.decel, dt)
-        const target = Math.min(edge.length, limit, v.progress + speed * dt)
+        let target = Math.min(edge.length, limit, v.progress + speed * dt)
+        // Longitudinal lane gaps do not protect the swept footprint of a
+        // turning vehicle. Enforce a final collision check inside junctions.
+        if (target > v.progress && this.wouldCollideInJunction(v, target)) target = v.progress
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
         v.speed = moved / dt

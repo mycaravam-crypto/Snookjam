@@ -158,5 +158,5 @@ export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
   const requestedStartingFleet = balance.startingVehicles +
     balance.startingVehiclesPerLevel * Math.max(0, level - 1)
-  return Math.min(maxVehiclesFor(balance, level), requestedStartingFleet)
+  return Math.min(balance.maxVehicles, requestedStartingFleet)
 }
