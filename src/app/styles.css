@@ -492,9 +492,15 @@ kbd {
 
 .tools {
   left: 12px;
-  /* Never wider than the screen: buttons shrink, then wrap. */
+  /* Keep the drawing action visually primary without hiding secondary tools. */
   max-width: calc(100% - 24px);
   flex-wrap: wrap;
+}
+
+.tools button[data-testid='tool-road'][aria-pressed='true'] {
+  min-width: 5.5em;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px #7ed95755, 0 4px 0 var(--btn-edge);
 }
 
 .tools button,

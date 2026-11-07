@@ -25,7 +25,7 @@ describe('App entry point', () => {
     expect(wrapper.find('canvas').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hud-level"]').text()).toBe('1')
     expect(wrapper.find('[data-testid="hud-pause"]').text()).toContain('Pause')
-    expect(wrapper.find('[data-testid="build-status"]').text()).toContain('Drag from a road')
+    expect(wrapper.find('[data-testid="build-status"]').text()).toContain('Draw from any road')
     wrapper.unmount()
   })
 

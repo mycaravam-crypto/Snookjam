@@ -45,7 +45,7 @@ function buy(item: ShopItemId): void {
 const heatmap = ref(false)
 const showStats = ref(false)
 
-const HINT = 'Drag from a road to another road to build a connection.'
+const HINT = 'Draw from any road. Connect to another road or release on open ground to create a dead end.'
 const SIGNAL_HINT = 'Tap a junction to add traffic lights.'
 const ROUNDABOUT_HINT = 'Tap a junction to build a roundabout.'
 const REMOVE_HINT = 'Tap a road you built to remove it.'

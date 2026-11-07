@@ -14,8 +14,10 @@ describe('checkConnection', () => {
     expect(check.ok).toBe(true)
   })
 
-  it('uses a forgiving two-tile radius for the release end while keeping start acquisition precise', () => {
+  it('uses a forgiving release radius while keeping start acquisition precise', () => {
     const { world, graph } = setup()
+    expect(constructionOptions().endSnapDistance).toBe(2.75)
+    expect(constructionOptions().endSnapRelease).toBe(3.5)
     const check = checkConnection(world, graph, { x: 8, y: 1.5 }, { x: 8, y: 3.5 })
     expect(check.ok).toBe(true)
     if (check.ok) expect(check.to.position.x).toBeCloseTo(9.5)

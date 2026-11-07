@@ -42,8 +42,8 @@ export interface ConstructionOptions extends PathOptions {
 export const DEFAULT_CONSTRUCTION_OPTIONS: ConstructionOptions = Object.freeze({
   ...DEFAULT_PATH_OPTIONS,
   snapDistance: DEFAULT_SNAP_DISTANCE,
-  endSnapDistance: 2,
-  endSnapRelease: 2.5,
+  endSnapDistance: 2.75,
+  endSnapRelease: 3.5,
   nodeSnap: 0.5,
   minLength: 1,
   maxLength: Infinity,

@@ -94,14 +94,14 @@ or the app layer.
   touch and stylus (Pointer Events).
 - **Snapping is generous:** the start snaps to the nearest point *along* a
   road within 1¼ tiles (`DEFAULT_SNAP_DISTANCE`, `snapDistance`) and the
-  release end within 2 tiles (`endSnapDistance`); either snaps to a junction
+  release end within 2¾ tiles (`endSnapDistance`); either snaps to a junction
   or road end within ½ a tile. Once the end has snapped to a road it stays on
-  that road until the pointer is 2½ tiles away (`endSnapRelease`), so jitter
+  that road until the pointer is 3½ tiles away (`endSnapRelease`), so jitter
   near another road does not make it jump. All are configurable through
   `constructionOptions`. While the end is in range, a ring marks where the
   road will attach: a square for a junction, a circle for a point along a road.
 - Releasing away from any road builds a dead end, which later roads can start
-  from or connect to. Crossing an existing road creates a junction there.
+  from or connect to. Crossings with existing roads create usable junctions.
 - **Traffic lights (#32):** switch the tool from **Road** to **Lights** (top
   left of the map), then tap a junction where three or more roads meet.
   Dashed rings mark the junctions that can take lights. The first tap adds
@@ -132,11 +132,9 @@ or the app layer.
 - While dragging, the preview is **solid green** with a round end when the
   road can be built, and **dashed red** with a cross when it cannot. The status
   line at the bottom says why (e.g. "Roads cannot cross water").
-- A road is rejected if it does not start and end on the network, is shorter
-  than one tile, duplicates or runs along an existing road, crosses water or
-  leaves the map, crosses another road anywhere except at its ends, crosses
-  itself, passes closer than one road width to a road it does not join, or
-  meets a road at less than 60° (two-lane roads need room, #22).
+- Roads may cross existing roads and form junctions. They are rejected when
+  they leave the map, cross impassable terrain, overlap existing roads, cross
+  themselves, or pass too close to parallel roads for the two-lane road width.
 - New roads join the road graph immediately and atomically (a rejected road
   changes nothing), splitting the roads they attach to, so later route
   queries can use them. Vehicles re-plan at their next junction.
