@@ -257,7 +257,7 @@ test.describe('critical player flow', () => {
   test('2. shows the map, tunnels and moving vehicles', async ({ page }) => {
     await play(page)
     await expect(page.locator('canvas').first()).toBeVisible()
-    await expect.poll(async () => Number(await page.getByTestId('hud-cars').textContent())).toBeGreaterThan(0)
+    await expect.poll(async () => Number((await page.getByTestId('hud-cars').textContent())?.split('/')[0]?.trim())).toBeGreaterThan(0)
     // Vehicles move, so the picture changes between frames.
     const before = await canvasHash(page)
     await expect.poll(() => canvasHash(page), { timeout: 5000 }).not.toBe(before)

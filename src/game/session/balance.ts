@@ -84,8 +84,8 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
   blockedRatePerSec: 8,
-  pendingReference: 18,
-  pendingRatePerSec: 2,
+  pendingReference: 6,
+  pendingRatePerSec: 3,
   exitRelief: 0.75,
   flowDecayPerSec: 1.5,
   levelStartGraceSec: 10,
@@ -156,8 +156,7 @@ export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
-  return Math.min(
-    balance.maxVehicles,
-    balance.startingVehicles + balance.startingVehiclesPerLevel * Math.max(0, level - 1),
-  )
+  const requestedStartingFleet = balance.startingVehicles +
+    balance.startingVehiclesPerLevel * Math.max(0, level - 1)
+  return Math.min(maxVehiclesFor(balance, level), requestedStartingFleet)
 }
