@@ -94,19 +94,25 @@ describe('simplifyPath', () => {
 })
 
 describe('enforceMinSegment', () => {
-  it('drops bends closer than the minimum to their neighbours', () => {
-    const pts = [
+  it('merges short near-collinear segments but keeps a meaningful tight bend', () => {
+    const straight = [
       { x: 0, y: 0 },
-      { x: 0.3, y: 0.3 },
-      { x: 2, y: 1 },
-      { x: 2.2, y: 1.4 },
+      { x: 0.3, y: 0.02 },
+      { x: 0.5, y: 0.03 },
       { x: 4, y: 0 },
     ]
-    expect(enforceMinSegment(pts, 1)).toEqual([
+    expect(enforceMinSegment(straight, 1)).toEqual([
       { x: 0, y: 0 },
-      { x: 2, y: 1 },
       { x: 4, y: 0 },
     ])
+
+    const bend = [
+      { x: 0, y: 0 },
+      { x: 0.4, y: 0 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.8, y: 0.8 },
+    ]
+    expect(enforceMinSegment(bend, 0.5)).toEqual(bend)
   })
 })
 
@@ -127,6 +133,21 @@ describe('buildRoadPath', () => {
         DEFAULT_PATH_OPTIONS.minSegmentLength - 1e-9,
       )
     }
+  })
+
+  it('retains both lobes of a hand-drawn S-curve', () => {
+    const samples = [
+      { x: 1, y: 0.5 },
+      { x: 2, y: 1 },
+      { x: 3, y: 0.5 },
+      { x: 4, y: 0 },
+      { x: 5, y: -0.5 },
+      { x: 6, y: -1 },
+      { x: 7, y: -0.5 },
+    ]
+    const path = buildRoadPath({ x: 0, y: 0 }, { x: 8, y: 0 }, samples)
+    expect(Math.max(...path.map((p) => p.y))).toBeGreaterThan(0.8)
+    expect(Math.min(...path.map((p) => p.y))).toBeLessThan(-0.8)
   })
 
   it('gives a straight road when no samples lie between the ends', () => {

@@ -56,7 +56,21 @@ export function smoothPath(points: readonly Point[], passes: number): Point[] {
       const a = current[i - 1]!
       const b = current[i]!
       const c = current[i + 1]!
-      next.push({ x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4 })
+      // Preserve intentional corners. Compare direction over a wider window
+      // than one resampled interval so tight curves are not mistaken for jitter.
+      const before = current[Math.max(0, i - 2)]!
+      const after = current[Math.min(current.length - 1, i + 2)]!
+      const inX = b.x - before.x
+      const inY = b.y - before.y
+      const outX = after.x - b.x
+      const outY = after.y - b.y
+      const lengths = Math.hypot(inX, inY) * Math.hypot(outX, outY)
+      const direction = lengths > 0 ? (inX * outX + inY * outY) / lengths : 1
+      if (direction < Math.cos(Math.PI / 4)) {
+        next.push(b)
+      } else {
+        next.push({ x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4 })
+      }
     }
     next.push(current[current.length - 1]!)
     current = next
@@ -104,19 +118,30 @@ export function simplifyPath(points: readonly Point[], tolerance: number): Point
 }
 
 /**
- * Drops interior vertices so no segment is shorter than `minLength`, except
- * that a path whose ends are closer than that stays a single segment.
+ * Enforces a preferred minimum edge length without flattening meaningful bends.
+ * A short segment is merged only when removing its vertex stays within the
+ * same geometric error budget used by path simplification. Tight bends may
+ * therefore retain a shorter edge rather than being replaced by a shortcut.
  */
-export function enforceMinSegment(points: readonly Point[], minLength: number): Point[] {
-  if (points.length < 3) return points.map((p) => ({ x: p.x, y: p.y }))
-  const end = points[points.length - 1]!
-  const out: Point[] = [points[0]!]
-  for (let i = 1; i < points.length - 1; i++) {
-    const p = points[i]!
-    if (distance(out[out.length - 1]!, p) >= minLength && distance(p, end) >= minLength) out.push(p)
+export function enforceMinSegment(points: readonly Point[], minLength: number, tolerance = 0.1): Point[] {
+  const result = points.map((p) => ({ x: p.x, y: p.y }))
+  if (result.length < 3) return result
+
+  let changed = true
+  while (changed && result.length > 2) {
+    changed = false
+    for (let i = 1; i < result.length - 1; i++) {
+      const previous = result[i - 1]!
+      const current = result[i]!
+      const next = result[i + 1]!
+      if (distance(previous, current) >= minLength && distance(current, next) >= minLength) continue
+      if (pointSegmentDistance(current, previous, next) > tolerance) continue
+      result.splice(i, 1)
+      changed = true
+      break
+    }
   }
-  out.push(end)
-  return out.map((p) => ({ x: p.x, y: p.y }))
+  return result
 }
 
 /**
@@ -137,7 +162,7 @@ export function buildRoadPath(
   const raw = [start, ...interior, end]
   const smoothed = smoothPath(resamplePath(raw, options.resampleSpacing), options.smoothingPasses)
   const simplified = simplifyPath(smoothed, options.simplifyTolerance)
-  return enforceMinSegment(simplified, options.minSegmentLength)
+  return enforceMinSegment(simplified, options.minSegmentLength, options.simplifyTolerance)
 }
 
 /** Total length of a polyline in tiles. */
