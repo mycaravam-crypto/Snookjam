@@ -9,6 +9,7 @@ import {
   type Point,
   type SessionSnapshot,
   type SessionState,
+  type GameSaveData,
   type ShopItemId,
 } from '@game/index'
 
@@ -75,12 +76,15 @@ export interface GameController {
   nextLevel(): void
   /** Replaces the run with a new seed (same mode) and starts it. */
   newGame(seed: number | string): void
+  saveData(): GameSaveData
+  loadSave(data: unknown): void
   /** Advances real time (seconds) and refreshes the snapshot. */
   frame(elapsedSec: number): void
   dispose(): void
 }
 
 export function createGameController(seed: number | string, mode: GameMode = 'classic'): GameController {
+  let currentMode = mode
   const session = shallowRef(new GameSession({ seed, mode }))
   const snapshot = shallowRef(session.value.snapshot())
   const construction = shallowRef(makeConstruction(session.value))
@@ -237,9 +241,25 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
     togglePause: act((s) => (s.state === 'paused' ? s.resume() : s.pause())),
     restart: act((s) => s.restart()),
     nextLevel: act((s) => s.nextLevel()),
+    saveData() {
+      return session.value.toSaveData()
+    },
+    loadSave(data) {
+      const restored = GameSession.fromSaveData(data)
+      unsubscribe()
+      session.value = restored
+      currentMode = restored.mode
+      construction.value = makeConstruction(restored)
+      selectedSignal.value = undefined
+      selectedRoundabout.value = undefined
+      selectedRoad.value = undefined
+      tool.value = 'road'
+      unsubscribe = bind(restored)
+      snapshot.value = restored.snapshot()
+    },
     newGame(nextSeed) {
       unsubscribe()
-      session.value = new GameSession({ seed: nextSeed, mode })
+      session.value = new GameSession({ seed: nextSeed, mode: currentMode })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
       selectedRoundabout.value = undefined

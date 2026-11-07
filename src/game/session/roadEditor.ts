@@ -54,6 +54,15 @@ const TURN_CLEARANCE = 1
 /** Undo steps kept; older ones are dropped. */
 export const MAX_EDIT_HISTORY = 50
 
+export interface RoadEditorState {
+  readonly version: 1
+  readonly records: readonly PlayerRoad[]
+  readonly undoStack: readonly HistoryEntry[]
+  readonly redoStack: readonly HistoryEntry[]
+  readonly nextId: number
+  readonly versionCounter: number
+}
+
 interface HistoryEntry {
   readonly kind: 'build' | 'remove'
   readonly road: number
@@ -86,6 +95,41 @@ export class RoadEditor {
       },
       removed: (result) => sim.applyRemoval(result),
     }
+  }
+
+
+  toState(): RoadEditorState {
+    return {
+      version: 1,
+      records: [...this.records.values()].map((road) => ({ ...road, points: road.points.map((p) => ({ ...p })) })),
+      undoStack: this.undoStack.map((entry) => ({ ...entry })),
+      redoStack: this.redoStack.map((entry) => ({ ...entry })),
+      nextId: this.nextId,
+      versionCounter: this.versionCounter,
+    }
+  }
+
+  restoreState(state: RoadEditorState): void {
+    if (!state || state.version !== 1 || !Array.isArray(state.records) ||
+      !Array.isArray(state.undoStack) || !Array.isArray(state.redoStack) ||
+      !Number.isInteger(state.nextId) || state.nextId < 1 ||
+      !Number.isInteger(state.versionCounter) || state.versionCounter < 0) throw new TypeError('invalid road editor save data')
+    this.records.clear()
+    for (const road of state.records) {
+      if (!road || !Number.isInteger(road.id) || road.id < 1 || !Array.isArray(road.points) ||
+        road.points.length < 2 || !['open', 'closing', 'removed'].includes(road.state) ||
+        road.points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new TypeError('invalid saved player road')
+      if (road.state !== 'removed' && this.graph.roadEdges(road.id).length === 0) throw new TypeError('saved player road is missing from graph')
+      this.records.set(road.id, { ...road, points: road.points.map((p) => ({ x: p.x, y: p.y })) })
+    }
+    const validHistory = (entry: HistoryEntry) =>
+      entry && (entry.kind === 'build' || entry.kind === 'remove') && this.records.has(entry.road)
+    if (![...state.undoStack, ...state.redoStack].every(validHistory)) throw new TypeError('invalid road edit history')
+    this.undoStack.splice(0, this.undoStack.length, ...state.undoStack.map((entry) => ({ ...entry })))
+    this.redoStack.splice(0, this.redoStack.length, ...state.redoStack.map((entry) => ({ ...entry })))
+    if (state.nextId <= Math.max(0, ...this.records.keys())) throw new TypeError('invalid player road id counter')
+    this.nextId = state.nextId
+    this.versionCounter = state.versionCounter
   }
 
   /** Changes whenever the set of drawn roads (or their state) changes. */

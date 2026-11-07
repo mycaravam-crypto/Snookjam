@@ -167,6 +167,32 @@ test.describe('critical player flow', () => {
     expect(used).toBe(true)
   })
 
+
+  test('saves and restores the live map, traffic and edit history', async ({ page }) => {
+    await play(page)
+    await fastForward(page, 4)
+    await drag(page, road.from, road.to)
+    await fastForward(page, 3)
+    await page.getByTestId('hud-pause').click()
+    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
+
+    const before = await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.toSaveData()))
+    await page.getByTestId('save-game').click()
+    await expect(page.getByTestId('build-status')).toContainText('Game saved')
+
+    await page.reload()
+    await play(page)
+    await expect(page.getByTestId('load-game')).toBeEnabled()
+    await page.getByTestId('load-game').click()
+    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
+    const after = await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.toSaveData()))
+    expect(JSON.parse(after)).toEqual(JSON.parse(before))
+
+    await page.getByTestId('overlay-resume').click()
+    await fastForward(page, 1)
+    expect((await state(page)).levelTime).toBeGreaterThan(7)
+  })
+
   test('recovers cleanly from gridlock', async ({ page }) => {
     await play(page)
     const initial = await graphInfo(page)

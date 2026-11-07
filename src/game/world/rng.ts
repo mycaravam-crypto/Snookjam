@@ -11,6 +11,8 @@ export interface Rng {
   pick<T>(items: readonly T[]): T
   /** Returns a shuffled copy (Fisher–Yates). */
   shuffle<T>(items: readonly T[]): T[]
+  getState(): number
+  setState(state: number): void
 }
 
 /** Mulberry32: small, fast and good enough for game content. */
@@ -30,6 +32,11 @@ export function createRng(seed: number): Rng {
     pick<T>(items: readonly T[]): T {
       if (items.length === 0) throw new RangeError('cannot pick from an empty array')
       return items[int(0, items.length - 1)] as T
+    },
+    getState: () => state,
+    setState(nextState: number): void {
+      if (!Number.isInteger(nextState) || nextState < 0 || nextState > 0xffffffff) throw new RangeError('invalid RNG state')
+      state = nextState >>> 0
     },
     shuffle<T>(items: readonly T[]): T[] {
       const copy = items.slice()

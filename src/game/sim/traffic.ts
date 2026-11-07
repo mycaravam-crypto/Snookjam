@@ -73,6 +73,8 @@ import {
 /** Structural subset of the world Rng: uniform float in [0, 1). */
 export interface RandomSource {
   next(): number
+  getState?(): number
+  setState?(state: number): void
 }
 
 export type VehicleClass = 'car' | 'van' | 'truck'
@@ -173,6 +175,42 @@ export interface TrafficOptions {
 }
 
 export type VehicleState = 'moving' | 'waiting' | 'stuck'
+
+export interface TrafficSimState {
+  readonly version: 1
+  readonly spawnInterval: number
+  readonly spawnTimer: number
+  readonly pending: number
+  readonly nextId: number
+  readonly time: number
+  readonly ticks: number
+  readonly totalSpawned: number
+  readonly totalExited: number
+  readonly totalUnroutable: number
+  readonly randomState: number
+  readonly vehicles: readonly {
+    readonly id: number
+    readonly kind: VehicleClass
+    readonly origin: NodeId
+    readonly destination: NodeId
+    readonly steps: readonly RouteStep[]
+    readonly stepIndex: number
+    readonly progress: number
+    readonly speed: number
+    readonly state: VehicleState
+    readonly waitTime: number
+    readonly waitingFor: number
+    readonly spawnedAt: number
+    readonly routeVersion: number
+    readonly failedVersion: number
+    readonly holding?: NodeId
+  }[]
+  readonly junctionFreeAt: readonly (readonly [NodeId, number])[]
+  readonly junctionHolder: readonly (readonly [NodeId, number])[]
+  readonly arrivals: readonly (readonly [number, { readonly key: NodeId; readonly at: number }])[]
+  readonly signals: readonly (readonly [NodeId, { readonly greenSec: number; readonly startedAt: number }])[]
+  readonly roundabouts: readonly NodeId[]
+}
 
 export interface Vehicle {
   readonly id: number
@@ -395,6 +433,114 @@ export class TrafficSim {
       totalSpawned: this.totalSpawned,
       totalExited: this.totalExited,
       totalUnroutable: this.totalUnroutable,
+    }
+  }
+
+
+  /** Plain-data snapshot of all state needed to resume deterministic traffic. */
+  toState(): TrafficSimState {
+    const randomState = this.random.getState?.()
+    if (randomState === undefined) throw new Error('traffic random source does not support state snapshots')
+    return {
+      version: 1,
+      spawnInterval: this.spawnInterval,
+      spawnTimer: this.spawnTimer,
+      pending: this.pending,
+      nextId: this.nextId,
+      time: this.time,
+      ticks: this.ticks,
+      totalSpawned: this.totalSpawned,
+      totalExited: this.totalExited,
+      totalUnroutable: this.totalUnroutable,
+      randomState,
+      vehicles: [...this.fleet.values()].map((v) => ({ ...v, steps: v.steps.map((step) => ({ ...step })) })),
+      junctionFreeAt: [...this.junctionFreeAt],
+      junctionHolder: [...this.junctionHolder],
+      arrivals: [...this.arrivals].map(([id, arrival]) => [id, { ...arrival }] as const),
+      signals: [...this.signalMap].map(([id, signal]) => [id, { ...signal }] as const),
+      roundabouts: [...this.roundaboutSet],
+    }
+  }
+
+  /** Restores a previously validated state without moving or respawning vehicles. */
+  restoreState(state: TrafficSimState): void {
+    const finite = (n: number) => Number.isFinite(n) && n >= 0
+    if (!state || state.version !== 1 || !finite(state.spawnInterval) || !(state.spawnInterval > 0) ||
+      !finite(state.spawnTimer) || !Number.isInteger(state.pending) || state.pending < 0 ||
+      !Number.isInteger(state.nextId) || state.nextId < 0 || !finite(state.time) ||
+      !Number.isInteger(state.ticks) || state.ticks < 0 ||
+      !Number.isInteger(state.totalSpawned) || state.totalSpawned < 0 ||
+      !Number.isInteger(state.totalExited) || state.totalExited < 0 ||
+      !Number.isInteger(state.totalUnroutable) || state.totalUnroutable < 0 ||
+      !Number.isInteger(state.randomState) || !Array.isArray(state.vehicles)) {
+      throw new TypeError('invalid traffic simulation save data')
+    }
+    if (!this.random.setState) throw new Error('traffic random source cannot restore state')
+    const restored = new Map<number, MutableVehicle>()
+    for (const raw of state.vehicles) {
+      if (!raw || !Number.isInteger(raw.id) || raw.id < 0 || restored.has(raw.id) ||
+        !['car', 'van', 'truck'].includes(raw.kind) || !this.graph.hasNode(raw.origin) ||
+        !this.graph.hasNode(raw.destination) || !Array.isArray(raw.steps) || raw.steps.length === 0 ||
+        !Number.isInteger(raw.stepIndex) || raw.stepIndex < 0 || raw.stepIndex >= raw.steps.length ||
+        !finite(raw.progress) || !finite(raw.speed) || !finite(raw.waitTime) || !finite(raw.waitingFor) ||
+        !finite(raw.spawnedAt) || !Number.isInteger(raw.routeVersion) || !Number.isInteger(raw.failedVersion)) {
+        throw new TypeError('invalid saved vehicle')
+      }
+      for (const step of raw.steps) {
+        const edge = this.graph.getEdge(step.edge)
+        if (!edge || !((edge.a === step.from && edge.b === step.to) || (edge.b === step.from && edge.a === step.to))) {
+          throw new TypeError('saved vehicle route does not match road graph')
+        }
+      }
+      const current = raw.steps[raw.stepIndex]!
+      if (raw.progress > this.graph.getEdge(current.edge)!.length + 1e-6) throw new TypeError('saved vehicle is outside its current road')
+      restored.set(raw.id, { ...raw, steps: raw.steps.map((step) => ({ ...step })), holding: raw.holding })
+    }
+    if (state.nextId <= Math.max(-1, ...restored.keys()) || state.pending > this.maxPendingSpawns) throw new TypeError('invalid traffic counters')
+    this.fleet.clear()
+    this.lanes.clear()
+    for (const v of restored.values()) {
+      this.fleet.set(v.id, v)
+      this.laneFor(v.steps[v.stepIndex]!).push(v)
+    }
+    for (const lane of this.lanes.values()) lane.sort((a, b) => b.progress - a.progress || a.id - b.id)
+    this.spawnInterval = Math.max(this.minSpawnIntervalSec, state.spawnInterval)
+    this.spawnTimer = state.spawnTimer
+    this.pending = state.pending
+    this.nextId = state.nextId
+    this.time = state.time
+    this.ticks = state.ticks
+    this.totalSpawned = state.totalSpawned
+    this.totalExited = state.totalExited
+    this.totalUnroutable = state.totalUnroutable
+    this.random.setState(state.randomState)
+    this.junctionFreeAt.clear()
+    this.junctionHolder.clear()
+    this.arrivals.clear()
+    this.signalMap.clear()
+    this.roundaboutSet.clear()
+    this.junctionsVersion = -1
+    this.refreshJunctions()
+    for (const [key, at] of state.junctionFreeAt) {
+      if (!this.junctionInfo.has(key) || !finite(at)) throw new TypeError('invalid saved junction timer')
+      this.junctionFreeAt.set(key, at)
+    }
+    for (const [key, id] of state.junctionHolder) {
+      const vehicle = this.fleet.get(id)
+      if (!this.junctionInfo.has(key) || !vehicle || vehicle.holding !== key || this.junctionHolder.has(key)) throw new TypeError('invalid saved junction holder')
+      this.junctionHolder.set(key, id)
+    }
+    for (const [id, arrival] of state.arrivals) {
+      if (!this.fleet.has(id) || !this.junctionInfo.has(arrival.key) || !finite(arrival.at)) throw new TypeError('invalid saved junction arrival')
+      this.arrivals.set(id, { ...arrival })
+    }
+    for (const [node, signal] of state.signals) {
+      if (!this.graph.hasNode(node) || !finite(signal.greenSec) || signal.greenSec <= 0 || !finite(signal.startedAt)) throw new TypeError('invalid saved traffic signal')
+      this.signalMap.set(node, { ...signal })
+    }
+    for (const node of state.roundabouts) {
+      if (!this.graph.hasNode(node)) throw new TypeError('invalid saved roundabout')
+      this.roundaboutSet.add(node)
     }
   }
 

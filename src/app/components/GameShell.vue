@@ -50,6 +50,51 @@ const SIGNAL_HINT = 'Tap a junction to add traffic lights.'
 const ROUNDABOUT_HINT = 'Tap a junction to build a roundabout.'
 const REMOVE_HINT = 'Tap a road you built to remove it.'
 
+const SAVE_KEY = 'snookjam.save.v1'
+const hasSave = ref(false)
+
+function refreshSaveAvailability(): void {
+  try {
+    hasSave.value = localStorage.getItem(SAVE_KEY) !== null
+  } catch {
+    hasSave.value = false
+  }
+}
+
+function saveGame(): void {
+  try {
+    const payload = JSON.stringify(game.saveData())
+    localStorage.setItem(SAVE_KEY, payload)
+    hasSave.value = true
+    status.value = 'Game saved on this device'
+  } catch (error) {
+    status.value = error instanceof DOMException && error.name === 'QuotaExceededError'
+      ? 'Save failed: browser storage is full'
+      : 'Save failed: browser storage is unavailable'
+  }
+}
+
+function loadGame(): void {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY)
+    if (!raw) {
+      hasSave.value = false
+      status.value = 'No saved game on this device'
+      return
+    }
+    game.loadSave(JSON.parse(raw))
+    status.value = 'Game loaded · paused'
+    lastOutcome = ''
+    lastSignalMessage = ''
+    lastEditMessage = ''
+    shopOpen.value = false
+    heatmap.value = false
+    showStats.value = false
+  } catch (error) {
+    status.value = error instanceof Error ? `Load failed: ${error.message}` : 'Load failed: invalid save'
+  }
+}
+
 /** Player roads to draw, re-read on every snapshot (#33). */
 const roads = computed(() => {
   void snapshot.value
@@ -261,6 +306,7 @@ function watchConstruction(): void {
 
 onMounted(() => {
   game.start()
+  refreshSaveAvailability()
   watchConstruction()
   window.addEventListener('keydown', onKey)
   document.addEventListener('visibilitychange', onVisibility)
@@ -353,6 +399,8 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
           Remove
         </button>
         <span class="tools-gap" aria-hidden="true" />
+        <button type="button" data-testid="save-game" @click="saveGame">Save</button>
+        <button type="button" data-testid="load-game" :disabled="!hasSave" @click="loadGame">Load</button>
         <button
           type="button"
           class="tool-icon"

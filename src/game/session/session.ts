@@ -16,11 +16,11 @@
  * Vue components read snapshot() and call the transition methods.
  */
 import { DEFAULT_CONFIG } from '../config'
-import type { ConnectResult, EdgeOptions, NodeId, Point, RoadGraph, RoadLocation } from '../roads'
-import { FixedStepClock, TrafficSim, type SignalOptions } from '../sim'
+import { RoadGraph, type ConnectResult, type EdgeOptions, type NodeId, type Point, type RoadGraphState, type RoadLocation } from '../roads'
+import { FixedStepClock, TrafficSim, type SignalOptions, type TrafficSimState } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
-import { NetworkMonitor, type NetworkStats } from '../diagnostics'
+import { NetworkMonitor, type NetworkMonitorState, type NetworkStats } from '../diagnostics'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
 import {
   createEconomy,
@@ -33,10 +33,37 @@ import {
   type Reward,
   type ShopItemId,
 } from './economy'
-import { RoadEditor, type EditResult, type PlayerRoad } from './roadEditor'
+import { RoadEditor, type EditResult, type PlayerRoad, type RoadEditorState } from './roadEditor'
 import { evaluateObjectives, levelScore, objectivesFor, type GameMode, type ObjectiveDef, type ObjectiveProgress } from './objectives'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
+
+/** Versioned, client-side save data. Transient rendering state is deliberately excluded. */
+export interface GameSaveData {
+  readonly format: 'snookjam-save'
+  readonly version: 1
+  readonly seed: number
+  readonly mode: GameMode
+  readonly worldOptions: Partial<WorldOptions>
+  readonly balance: BalanceConfig
+  readonly economy: EconomyConfig
+  readonly objectives?: readonly (readonly ObjectiveDef[])[]
+  readonly state: 'running' | 'paused'
+  readonly level: number
+  readonly world: World
+  readonly graph: RoadGraphState
+  readonly traffic: TrafficSimState
+  readonly diagnostics: NetworkMonitorState
+  readonly editor: RoadEditorState
+  readonly congestion: number
+  readonly levelTime: number
+  readonly completedTime: number
+  readonly exitedInRun: number
+  readonly completedScore: number
+  readonly coins: number
+  readonly owned: Record<ShopItemId, number>
+  readonly onMap: Record<ShopItemId, number>
+}
 
 export type SessionEvent =
   | { readonly type: 'stateChange'; readonly from: SessionState; readonly to: SessionState }
@@ -155,6 +182,110 @@ export class GameSession {
     this.objectiveTable = options.objectives
     this.clock = new FixedStepClock(options.simulationHz ?? DEFAULT_CONFIG.simulationHz)
     this.current = this.buildLevel(1)
+  }
+
+
+  /** Exports a complete deterministic save of the current active level. */
+  toSaveData(): GameSaveData {
+    if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
+      throw new Error('only an active game can be saved')
+    }
+    return {
+      format: 'snookjam-save',
+      version: 1,
+      seed: this.seed,
+      mode: this.mode,
+      worldOptions: { ...this.worldOptions },
+      balance: this.balance,
+      economy: this.economy,
+      ...(this.objectiveTable === undefined ? {} : { objectives: this.objectiveTable }),
+      state: this.stateValue,
+      level: this.levelNumber,
+      world: this.current.world,
+      graph: this.current.graph.toState(),
+      traffic: this.current.sim.toState(),
+      diagnostics: this.current.diagnostics.toState(),
+      editor: this.current.editor.toState(),
+      congestion: this.congestionValue,
+      levelTime: this.levelTime,
+      completedTime: this.completedTime,
+      exitedInRun: this.exitedInRun,
+      completedScore: this.completedScore,
+      coins: this.coinsValue,
+      owned: { ...this.owned },
+      onMap: { ...this.onMap },
+    }
+  }
+
+  /** Validates and restores a save. The returned game is paused until resumed by the player. */
+  static fromSaveData(input: unknown): GameSession {
+    if (!input || typeof input !== 'object') throw new TypeError('save data must be an object')
+    const data = input as GameSaveData
+    const finite = (n: number) => Number.isFinite(n) && n >= 0
+    if (data.format !== 'snookjam-save' || data.version !== 1) throw new Error('unsupported save version')
+    if (!Number.isInteger(data.seed) || !Number.isInteger(data.level) || data.level < 1 ||
+      !['classic', 'objectives', 'sandbox'].includes(data.mode) ||
+      !['running', 'paused'].includes(data.state) ||
+      !data.world || !Number.isInteger(data.world.width) || !Number.isInteger(data.world.height) ||
+      data.world.width < 12 || data.world.height < 12 ||
+      !Array.isArray(data.world.terrain) || data.world.terrain.length !== data.world.width * data.world.height ||
+      !Array.isArray(data.world.road) || data.world.road.length !== data.world.width * data.world.height ||
+      !Array.isArray(data.world.portals) || data.world.portals.length < 2 ||
+      !finite(data.congestion) || data.congestion > 100 || !finite(data.levelTime) ||
+      !finite(data.completedTime) || !finite(data.exitedInRun) || !finite(data.completedScore) ||
+      !finite(data.coins) || !data.owned || !data.onMap) throw new TypeError('invalid save data')
+    const world = data.world
+    const graph = RoadGraph.fromState(data.graph)
+    for (const portal of world.portals) if (!graph.hasNode(portal.nodeId)) throw new TypeError('saved portal is missing from road graph')
+    const session = new GameSession({
+      seed: data.seed,
+      mode: data.mode,
+      balance: data.balance,
+      economy: data.economy,
+      world: data.worldOptions,
+      objectives: data.objectives,
+    })
+    const sim = new TrafficSim(graph, {
+      portals: world.portals.map((portal) => portal.nodeId),
+      random: createRng(mixSeed(world.seed, 0x7a11)),
+      startingVehicles: startingVehiclesFor(session.balance, data.level),
+      maxVehicles: maxVehiclesFor(session.balance, data.level),
+      spawnIntervalSec: spawnIntervalAt(session.balance, data.level, 0),
+      minSpawnIntervalSec: session.balance.minSpawnIntervalSec,
+      junctionClearSec: session.balance.junctionClearSec,
+      roundaboutClearFactor: session.balance.roundaboutClearFactor,
+      signalClearFactor: session.balance.signalClearFactor,
+      vehicleMix: vehicleMixFor(session.balance, data.level),
+    })
+    sim.restoreState(data.traffic)
+    const diagnostics = new NetworkMonitor(graph, sim, { blockedAfterSec: session.balance.blockedAfterSec })
+    diagnostics.restoreState(data.diagnostics)
+    const editor = new RoadEditor(graph, sim, {
+      connected: (result) => {
+        for (const split of result.splits) {
+          sim.applySplit(split)
+          diagnostics.applySplit(split)
+        }
+      },
+      removed: (result) => {
+        sim.applyRemoval(result)
+        diagnostics.applyRemoval(result)
+      },
+    })
+    editor.restoreState(data.editor)
+    session.current = { world, graph, sim, diagnostics, editor }
+    session.levelNumber = data.level
+    session.congestionValue = data.congestion
+    session.levelTime = data.levelTime
+    session.completedTime = data.completedTime
+    session.exitedInRun = data.exitedInRun
+    session.completedScore = data.completedScore
+    session.coinsValue = data.coins
+    session.owned = { ...data.owned }
+    session.onMap = { ...data.onMap }
+    session.stateValue = 'paused'
+    session.clock.reset()
+    return session
   }
 
   get state(): SessionState {
