@@ -116,6 +116,7 @@ export function findRoadJunctions(lines: readonly (readonly Point[])[]): Point[]
 export function strokeRoads(ctx: RenderContext, v: Viewport, lines: readonly (readonly Point[])[]): void {
   const s = v.scale
   const drawn = lines.filter((points) => points.length >= 2)
+  const junctions = findRoadJunctions(drawn)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   const passes: [string, number, number][] = [
@@ -152,7 +153,7 @@ export function strokeRoads(ctx: RenderContext, v: Viewport, lines: readonly (re
     ctx.setLineDash([])
     // Keep lane markings out of the shared centre of each junction.
     ctx.fillStyle = COLORS.road
-    for (const junction of findJunctions(drawn)) {
+    for (const junction of junctions) {
       const p = worldToScreen(v, junction)
       ctx.beginPath()
       ctx.arc(p.x, p.y, s * JUNCTION_MARKING_CLEARANCE, 0, Math.PI * 2)

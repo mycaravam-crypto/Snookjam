@@ -35,6 +35,7 @@ export function renderConstructionPreview(
   preview: ConstructionPreview | undefined,
   feedback: ConstructionFeedback | undefined,
   v: Viewport,
+  junctionRoads: readonly (readonly Point[])[] = [],
 ): void {
   const s = v.scale
   ctx.save()
@@ -63,6 +64,7 @@ export function renderConstructionPreview(
     if (!valid) ctx.setLineDash([s * 0.4, s * 0.3])
     polyline(ctx, v, points)
     ctx.setLineDash([])
+    drawPreviewJunctions(ctx, v, points, junctionRoads, valid ? COLORS.buildValid : COLORS.buildInvalid)
     if (preview.endSnap) snapIndicator(ctx, v, preview.pointer, preview.endSnap.position, preview.endSnap.location.kind === 'node')
     endpoint(ctx, v, preview.from, true)
     endpoint(ctx, v, preview.to, valid)
