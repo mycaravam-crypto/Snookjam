@@ -5,6 +5,8 @@ procedurally generated rural road network. Cars enter and leave through
 off-screen tunnels; you build new road connections to relieve bottlenecks
 before the congestion meter hits 100%.
 
+Choose between countryside, city and desert environments before starting a run. Each theme has its own procedural terrain, settlement density and visual palette while sharing the same traffic simulation.
+
 The game runs entirely client-side. There is no backend. See
 [#1](https://github.com/mycaravam-crypto/Snookjam/issues/1) for the MVP roadmap.
 
