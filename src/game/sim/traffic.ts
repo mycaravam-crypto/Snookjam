@@ -844,6 +844,9 @@ export class TrafficSim {
 
     // 1. Movement within lanes, front to back.
     const atEnd: MutableVehicle[] = []
+    // Preserve the commanded speed across a successful edge transition.
+    // Truncating the last movement to the edge boundary is not braking.
+    const transitionSpeeds = new Map<number, number>()
     for (const lane of this.lanes.values()) {
       let limit = Infinity
       let leader: MutableVehicle | undefined
@@ -862,6 +865,7 @@ export class TrafficSim {
         const speed = nextSpeed(v.speed, cruise, room, profile.accel, profile.decel, dt)
         const target = Math.min(edge.length, limit, v.progress + speed * dt)
         const moved = Math.max(0, target - v.progress)
+        if (target >= edge.length - 1e-9) transitionSpeeds.set(v.id, speed)
         v.progress += moved
         v.speed = moved / dt
         v.state = moved > 1e-9 ? 'moving' : v.state === 'stuck' ? 'stuck' : 'waiting'
@@ -876,6 +880,12 @@ export class TrafficSim {
     for (const v of atEnd) {
       const result = this.advanceAtJunction(v)
       if (result === 'exited') exited++
+      else if (result === 'moved') {
+        v.speed = transitionSpeeds.get(v.id) ?? v.speed
+      } else {
+        // The next edge was not available, so the vehicle really did stop.
+        v.speed = 0
+      }
     }
 
     // 3. Spawning.
