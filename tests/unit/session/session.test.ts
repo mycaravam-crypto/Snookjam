@@ -127,29 +127,37 @@ describe('GameSession lifecycle', () => {
     expect(events.filter((e) => e.type === 'gameOver')).toHaveLength(1)
   })
 
-  it('restarts cleanly with no stale vehicles, timers or congestion', () => {
-    const fresh = new GameSession({ seed: 42, balance: { levelDurationSec: 30 } })
-    fresh.start()
-    ticks(fresh, 12)
-    const expected = { snap: fresh.snapshot(), vehicles: JSON.stringify(fresh.sim.vehicles()) }
-
-    const { s } = session({ balance: { levelDurationSec: 30 } })
+  it('retries the failed level without losing completed-run progress', () => {
+    const { s } = session({ seed: 42, balance: { levelDurationSec: 30 } })
     s.start()
-    ticks(s, 30)
-    s.nextLevel()
-    ticks(s, 15)
+    for (let i = 0; i < 30 / DT && s.state === 'running'; i++) {
+      s.tick(DT)
+      s.setCongestionForTesting(0)
+    }
+    expect(s.state).toBe('levelComplete')
+    expect(s.nextLevel()).toBe(true)
+    expect(s.level).toBe(2)
+
+    const failedLevelSeed = s.world.seed
+    const progress = s.snapshot()
     s.setCongestionForTesting(100)
     s.tick(DT)
     expect(s.state).toBe('gameOver')
 
     expect(s.restart()).toBe(true)
-    const snap = s.snapshot()
-    expect(snap).toMatchObject({ state: 'running', level: 1, levelTime: 0, totalTime: 0, congestion: 0, vehiclesExited: 0 })
+    expect(s.snapshot()).toMatchObject({
+      state: 'running',
+      level: 2,
+      levelTime: 0,
+      totalTime: progress.totalTime,
+      congestion: 0,
+      vehiclesExited: progress.vehiclesExited,
+      score: progress.score,
+      coins: progress.coins,
+    })
+    expect(s.world.seed).toBe(failedLevelSeed)
     expect(s.sim.stats().totalSpawned).toBe(0)
-    ticks(s, 12)
-    // Same seed, same steps: identical to a brand-new session.
-    expect(s.snapshot()).toEqual(expected.snap)
-    expect(JSON.stringify(s.sim.vehicles())).toBe(expected.vehicles)
+    expect(s.snapshot().activeVehicles).toBe(0)
   })
 
   it('is deterministic for a seed', () => {
