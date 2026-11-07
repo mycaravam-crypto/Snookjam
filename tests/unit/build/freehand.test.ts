@@ -216,7 +216,7 @@ describe('freehand validation', () => {
     const trace = [
       { x: 7, y: 2.4 },
       { x: 10.5, y: 3 },
-      { x: 10.6, y: 4.3 },
+      { x: 9.9, y: 4.3 },
       { x: 8.5, y: 4.6 },
     ]
     expect(checkPath(world, graph, { x: 7, y: 1.6 }, { x: 8, y: 5.4 }, trace)).toMatchObject({
