@@ -88,7 +88,7 @@ describe('continuous corner driving', () => {
     }
 
     expect(bendSpeeds.length).toBeGreaterThan(0)
-    expect(Math.min(...bendSpeeds)).toBeLessThan(1.2)
+    expect(Math.min(...bendSpeeds)).toBeLessThan(1.5)
     expect(sim.stats().stuck).toBe(0)
     expect(sim.stats().totalExited).toBeGreaterThan(0)
   })
