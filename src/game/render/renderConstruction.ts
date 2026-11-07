@@ -3,7 +3,7 @@ import type { Point } from '../roads/graph'
 import { worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
 import { COLORS } from './palette'
-import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from './roadStyle'
+import { findRoadIntersections, ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from './roadStyle'
 
 export type ConstructionContext = RenderContext & Pick<CanvasRenderingContext2D, 'globalAlpha'>
 
@@ -130,5 +130,26 @@ function endpoint(ctx: RenderContext, v: Viewport, at: Point, ok: boolean): void
     ctx.moveTo(p.x + r * 0.7, p.y - r * 0.7)
     ctx.lineTo(p.x - r * 0.7, p.y + r * 0.7)
     ctx.stroke()
+  }
+}
+
+/** Paint the same shared road footprint in the live preview as on commit. */
+function drawPreviewJunctions(
+  ctx: RenderContext,
+  v: Viewport,
+  candidate: readonly Point[],
+  existing: readonly (readonly Point[])[],
+  surface: string,
+): void {
+  for (const junction of findRoadIntersections(candidate, existing)) {
+    const p = worldToScreen(v, junction)
+    ctx.fillStyle = COLORS.buildOutline
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, Math.max(1, v.scale * ROAD_EDGE_WIDTH * 0.5), 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = surface
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, Math.max(1, v.scale * ROAD_SURFACE_WIDTH * 0.5), 0, Math.PI * 2)
+    ctx.fill()
   }
 }

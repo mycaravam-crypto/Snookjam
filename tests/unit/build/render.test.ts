@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { constructionOptions, ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
 import type { ConstructionContext } from '@game/index'
-import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from '@game/render/roadStyle'
+import { findRoadIntersections, findRoadJunctions, ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from '@game/render/roadStyle'
 import { asciiWorld, LOOP } from './fixtures'
 
 function recorder() {
