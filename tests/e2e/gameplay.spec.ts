@@ -466,6 +466,21 @@ test.describe('critical player flow', () => {
   })
 })
 
+/** Open country near the middle of the map (clear of the toolbar and panels), 3+ tiles from any road. */
+const openCountry = (() => {
+  const graph = createRoadGraph(world)
+  const cx = world.width / 2
+  const cy = world.height / 2
+  for (let r = 0; r < Math.max(cx, cy); r++) {
+    for (let y = Math.floor(cy - r) + 0.5; y <= cy + r; y++) {
+      for (let x = Math.floor(cx - r) + 0.5; x <= cx + r; x++) {
+        if (!graph.nearestLocation({ x, y }, 3)) return { x, y }
+      }
+    }
+  }
+  throw new Error('no open country')
+})()
+
 /** Centre of the first junction on the current map that can take traffic lights. */
 const signalJunction = (page: Page) =>
   page.evaluate(() => {
@@ -484,7 +499,7 @@ test.describe('traffic lights (#32)', () => {
     await expect(page.getByTestId('build-status')).toContainText('Tap a junction')
 
     // Tapping open country explains what to tap.
-    const away = await toScreen(page, offRoad)
+    const away = await toScreen(page, openCountry)
     await page.mouse.click(away.x, away.y)
     await expect(page.getByTestId('build-status')).toContainText('No junction there')
     expect(await signalCount(page)).toBe(0)
@@ -576,6 +591,145 @@ test.describe('traffic lights (#32)', () => {
     expect(result.redWaits).toBeGreaterThan(0)
     // Every phase was green and cleared at least once.
     expect(result.phases).toBeGreaterThanOrEqual(4)
+  })
+})
+
+const roadState = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window as any).__snookjam.session.value
+    return { roads: s.roads().map((r: any) => r.state) as string[], edges: s.graph.edgeCount as number, nodes: s.graph.nodeCount as number }
+  })
+
+/** A point on a generated road well away from the useful road (more than 3 tiles from it). */
+const generatedRoadPoint = (() => {
+  const graph = createRoadGraph(world)
+  for (const n of graph.nodes()) {
+    const p = n.position
+    const dx = road.to.x - road.from.x
+    const dy = road.to.y - road.from.y
+    const t = Math.max(0, Math.min(1, ((p.x - road.from.x) * dx + (p.y - road.from.y) * dy) / (dx * dx + dy * dy)))
+    if (Math.hypot(p.x - road.from.x - t * dx, p.y - road.from.y - t * dy) > 3) return p
+  }
+  throw new Error('no generated road point')
+})()
+
+/** Middle of the useful road, for tapping it. */
+const roadMiddle = { x: (road.from.x + road.to.x) / 2, y: (road.from.y + road.to.y) / 2 }
+
+test.describe('road editing (#33)', () => {
+  test('E1. undo and redo a road with the buttons and the keyboard', async ({ page }) => {
+    await play(page)
+    await expect(page.getByTestId('undo')).toBeDisabled()
+    const before = await roadState(page)
+    await drag(page, road.from, road.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+    const built = await roadState(page)
+    expect(built.roads).toEqual(['open'])
+
+    await page.getByTestId('undo').click()
+    await expect(page.getByTestId('build-status')).toContainText('Undo: road removed')
+    expect(await roadState(page)).toEqual(before)
+    await expect(page.getByTestId('redo')).toBeEnabled()
+
+    await page.getByTestId('redo').click()
+    await expect(page.getByTestId('build-status')).toContainText('Redo: road rebuilt')
+    expect(await roadState(page)).toEqual(built)
+
+    await page.keyboard.press('Control+z')
+    expect(await roadState(page)).toEqual(before)
+    await page.keyboard.press('Control+Shift+z')
+    expect(await roadState(page)).toEqual(built)
+    await page.keyboard.press('Control+z')
+    await page.keyboard.press('Control+y')
+    expect(await roadState(page)).toEqual(built)
+  })
+
+  test('E2. selects and removes a player road; generated roads stay', async ({ page }) => {
+    await play(page)
+    const before = await roadState(page)
+    await drag(page, road.from, road.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+
+    await page.getByTestId('tool-remove').click()
+    // A generated road cannot be removed.
+    const generated = await toScreen(page, generatedRoadPoint)
+    await page.mouse.click(generated.x, generated.y)
+    await expect(page.getByTestId('build-status')).toContainText('Only roads you built can be removed')
+    await expect(page.getByTestId('road-panel')).toHaveCount(0)
+
+    const mid = await toScreen(page, roadMiddle)
+    await page.mouse.click(mid.x, mid.y)
+    await expect(page.getByTestId('road-panel')).toBeVisible()
+    await page.getByTestId('road-remove').click()
+    await expect(page.getByTestId('build-status')).toContainText(/Road removed|Road closed/)
+    // Run until it is gone, then the network is exactly as before.
+    await fastForward(page, 20)
+    expect(await roadState(page)).toEqual({ ...before, roads: [] })
+    // And the removal can be undone.
+    await page.getByTestId('undo').click()
+    expect((await roadState(page)).roads).toEqual(['open'])
+  })
+
+  test('E3. selects a road with touch', async ({ page }) => {
+    await play(page)
+    await drag(page, road.from, road.to)
+    await page.getByTestId('tool-remove').click()
+    const mid = await toScreen(page, roadMiddle)
+    await page.locator('canvas.world').evaluate((el, p) => {
+      const fire = (type: string) =>
+        el.dispatchEvent(new PointerEvent(type, { clientX: p.x, clientY: p.y, pointerId: 13, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true }))
+      fire('pointerdown')
+      fire('pointerup')
+    }, mid)
+    await expect(page.getByTestId('road-panel')).toBeVisible()
+  })
+
+  test('E4. a busy road closes, traffic drives off it, then it is removed', async ({ page }) => {
+    await play(page)
+    const before = await roadState(page)
+    await drag(page, road.from, road.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+    // Run until a vehicle is driving on the new road.
+    const busy = await page.evaluate(() => {
+      const g = (window as any).__snookjam
+      const s = g.session.value
+      const id = s.roads()[0].id
+      for (let i = 0; i < 20 * 120 && s.state === 'running'; i++) {
+        s.tick()
+        s.setCongestionForTesting(0)
+        if (s.isRoadOccupied(id)) break
+      }
+      g.frame(0)
+      return s.isRoadOccupied(id)
+    })
+    expect(busy).toBe(true)
+    await page.getByTestId('tool-remove').click()
+    const mid = await toScreen(page, roadMiddle)
+    await page.mouse.click(mid.x, mid.y)
+    await expect(page.getByTestId('road-panel-note')).toContainText('Cars are on it')
+    await page.getByTestId('road-remove').click()
+    await expect(page.getByTestId('build-status')).toContainText('Road closed')
+    expect((await roadState(page)).roads).toEqual(['closing'])
+
+    const result = await page.evaluate(() => {
+      const s = (window as any).__snookjam.session.value
+      let jumps = 0
+      const last = new Map<number, { x: number; y: number }>()
+      for (let i = 0; i < 20 * 60 && s.state === 'running'; i++) {
+        s.tick()
+        s.setCongestionForTesting(0)
+        for (const v of s.sim.vehicles()) {
+          const p = s.sim.positionOf(v).position
+          const q = last.get(v.id)
+          if (q && Math.hypot(p.x - q.x, p.y - q.y) > 0.2) jumps++
+          last.set(v.id, p)
+        }
+        if (s.roads().length === 0) break
+      }
+      return { jumps, roads: s.roads().length }
+    })
+    expect(result).toEqual({ jumps: 0, roads: 0 })
+    expect(await roadState(page)).toEqual({ ...before, roads: [] })
   })
 })
 

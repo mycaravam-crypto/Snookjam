@@ -7,5 +7,6 @@ export {
 } from './renderConstruction'
 export { renderVehicles, type VehicleContext } from './renderVehicles'
 export { renderSignals, type SignalRenderOptions } from './renderSignals'
+export { renderRoadEdits } from './renderRoadEdits'
 export { TERRAIN_COLORS, COLORS, FONT_FAMILY } from './palette'
 export { renderHeatmap, heatColor, HEATMAP_MIN_HEAT } from './renderHeatmap'

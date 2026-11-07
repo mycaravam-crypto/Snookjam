@@ -5,6 +5,7 @@ import {
   FONT_FAMILY,
   fitViewport,
   renderConstructionPreview,
+  renderRoadEdits,
   renderHeatmap,
   renderSignals,
   renderVehicles,
@@ -16,6 +17,7 @@ import {
   type ConstructionOutcome,
   type NetworkMonitor,
   type NodeId,
+  type PlayerRoad,
   type Point,
   type TrafficSim,
   type Viewport,
@@ -34,10 +36,18 @@ const props = withDefaults(
     diagnostics?: NetworkMonitor
     /** Draw the congestion heatmap overlay. */
     heatmap?: boolean
-    /** 'road' drags build roads; 'signal' taps place or select traffic lights (#32). */
-    tool?: 'road' | 'signal'
+    /**
+     * 'road' drags build roads; 'signal' taps place or select traffic lights
+     * (#32); 'remove' taps select player roads (#33).
+     */
+    tool?: 'road' | 'signal' | 'remove'
     /** Node of the selected traffic lights, if any. */
     selectedSignal?: NodeId
+    /** Player-built roads to draw (open and closing), and a version that changes with them. */
+    roads?: readonly PlayerRoad[]
+    roadsVersion?: number
+    /** Player road selected for removal, if any. */
+    selectedRoad?: number
   }>(),
   {
     construction: undefined,
@@ -47,6 +57,9 @@ const props = withDefaults(
     heatmap: false,
     tool: 'road',
     selectedSignal: undefined,
+    roads: () => [],
+    roadsVersion: 0,
+    selectedRoad: undefined,
   },
 )
 const emit = defineEmits<{ outcome: [ConstructionOutcome]; tap: [Point] }>()
@@ -107,8 +120,7 @@ function draw(): void {
   if (!ctx) return
   // The map and built roads change rarely: render them once into a cached
   // layer and copy it each frame, then draw the moving parts on top.
-  const roads = props.construction?.builtRoads.length ?? 0
-  const key = `${pixelW}x${pixelH}@${dpr}#${roads}`
+  const key = `${pixelW}x${pixelH}@${dpr}#${props.roadsVersion}`
   if (!background || backgroundWorld !== props.world || backgroundKey !== key) {
     background = background ?? document.createElement('canvas')
     background.width = pixelW
@@ -117,7 +129,7 @@ function draw(): void {
     if (bg) {
       bg.setTransform(dpr, 0, 0, dpr, 0, 0)
       renderWorld(bg, props.world, viewport, {
-        additionalRoads: props.construction?.builtRoads.map((road) => road.points) ?? [],
+        additionalRoads: props.roads.map((road) => road.points),
       })
     }
     backgroundWorld = props.world
@@ -128,6 +140,7 @@ function draw(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   // Display only: the overlay reads the monitor and never touches the sim.
   if (props.heatmap && props.diagnostics) renderHeatmap(ctx, props.diagnostics.graph, props.diagnostics, viewport)
+  renderRoadEdits(ctx, props.roads, viewport, props.tool === 'remove' ? props.selectedRoad : undefined)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
   if (props.traffic) {
     renderVehicles(ctx, props.traffic, viewport)
@@ -148,7 +161,7 @@ function toWorld(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Point | undefine
 }
 
 function onPointerDown(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     if (!props.interactive || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
     const point = toWorld(e)
     if (!point) return
@@ -166,7 +179,7 @@ function onPointerDown(e: PointerEvent): void {
 }
 
 function onPointerMove(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     if (tapStart?.id === e.pointerId) e.preventDefault()
     return
   }
@@ -185,7 +198,7 @@ function onPointerMove(e: PointerEvent): void {
 }
 
 function onPointerUp(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     const start = tapStart
     tapStart = undefined
     if (!start || start.id !== e.pointerId) return
@@ -258,10 +271,10 @@ watch(
   },
 )
 watch(
-  () => [props.tool, props.selectedSignal] as const,
+  () => [props.tool, props.selectedSignal, props.selectedRoad, props.roadsVersion] as const,
   () => {
     tapStart = undefined
-    if (canvas.value) canvas.value.style.cursor = props.tool === 'signal' ? 'pointer' : 'default'
+    if (canvas.value) canvas.value.style.cursor = props.tool === 'road' ? 'default' : 'pointer'
     scheduleDraw()
   },
 )
@@ -281,7 +294,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
+    :aria-label="tool === 'remove' ? `Map of seed ${world.seed}. Tap a road you built to select it for removal.` : tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

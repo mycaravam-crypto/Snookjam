@@ -3,6 +3,7 @@ import {
   ConstructionController,
   GameSession,
   type ConstructionTarget,
+  type EditResult,
   type NodeId,
   type GameMode,
   type Point,
@@ -10,8 +11,13 @@ import {
   type SessionState,
 } from '@game/index'
 
-/** What pointer input on the map does: build roads, or place traffic lights (#32). */
-export type Tool = 'road' | 'signal'
+/** What pointer input on the map does: build roads, place traffic lights (#32) or remove roads (#33). */
+export type Tool = 'road' | 'signal' | 'remove'
+
+/** How far (tiles) from a player road a tap still selects it. */
+export const ROAD_TAP_DISTANCE = 0.8
+
+export type RoadTapResult = 'selected' | 'generated' | 'none' | 'unavailable'
 
 /** How far (tiles) from a junction's centre a tap still selects it. */
 export const SIGNAL_TAP_DISTANCE = 1.6
@@ -42,6 +48,13 @@ export interface GameController {
   /** Sets the selected lights' green time (seconds). */
   setSignalGreen(greenSec: number): void
   removeSelectedSignal(): void
+  /** Id of the player road selected for removal, if any (#33). */
+  readonly selectedRoad: ShallowRef<number | undefined>
+  /** Selects the player road at `point` (with the remove tool). */
+  tapRoad(point: Point): RoadTapResult
+  removeSelectedRoad(): EditResult | undefined
+  undo(): EditResult | undefined
+  redo(): EditResult | undefined
   start(): void
   pause(): void
   resume(): void
@@ -61,6 +74,7 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
   const construction = shallowRef(makeConstruction(session.value))
   const tool = shallowRef<Tool>('road')
   const selectedSignal = shallowRef<NodeId | undefined>(undefined)
+  const selectedRoad = shallowRef<number | undefined>(undefined)
   let unsubscribe = bind(session.value)
 
   function makeConstruction(s: GameSession): ConstructionController {
@@ -75,6 +89,7 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
       if (construction.value.world !== s.world || construction.value.graph !== s.graph) {
         construction.value = makeConstruction(s)
         selectedSignal.value = undefined
+        selectedRoad.value = undefined
       }
       if (!canBuild(event.to)) construction.value.cancel()
       snapshot.value = s.snapshot()
@@ -100,7 +115,42 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
       if (tool.value === next) return
       construction.value.cancel()
       selectedSignal.value = undefined
+      selectedRoad.value = undefined
       tool.value = next
+    },
+    selectedRoad,
+    tapRoad(point) {
+      const s = session.value
+      if (!canBuild(s.state)) return 'unavailable'
+      const road = s.roadAt(point, ROAD_TAP_DISTANCE)
+      selectedRoad.value = road?.state === 'open' ? road.id : undefined
+      if (road) return 'selected'
+      // Generated roads cannot be removed; say so rather than ignoring the tap.
+      return s.graph.nearestLocation(point, ROAD_TAP_DISTANCE) ? 'generated' : 'none'
+    },
+    removeSelectedRoad() {
+      const id = selectedRoad.value
+      if (id === undefined || !canBuild(session.value.state)) return undefined
+      const result = session.value.removeRoad(id)
+      selectedRoad.value = undefined
+      refresh()
+      return result
+    },
+    undo() {
+      if (!canBuild(session.value.state)) return undefined
+      construction.value.cancel()
+      selectedRoad.value = undefined
+      const result = session.value.undo()
+      refresh()
+      return result
+    },
+    redo() {
+      if (!canBuild(session.value.state)) return undefined
+      construction.value.cancel()
+      selectedRoad.value = undefined
+      const result = session.value.redo()
+      refresh()
+      return result
     },
     tapSignal(point) {
       const s = session.value
@@ -144,6 +194,7 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
       session.value = new GameSession({ seed: nextSeed, mode })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
+      selectedRoad.value = undefined
       unsubscribe = bind(session.value)
       session.value.start()
       snapshot.value = session.value.snapshot()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type GameMode, type Point } from '@game/index'
+import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type EditResult, type GameMode, type Point } from '@game/index'
 import { canBuild, createGameController, type Tool } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
 import GameHud from './GameHud.vue'
@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{ mode?: GameMode }>(), { mode: 'classic'
 const emit = defineEmits<{ quit: [] }>()
 
 const game = createGameController(initialSeed(), props.mode)
-const { snapshot, construction, session, tool, selectedSignal } = game
+const { snapshot, construction, session, tool, selectedSignal, selectedRoad } = game
 const canvas = ref<InstanceType<typeof WorldCanvas> | null>(null)
 
 const world = computed(() => {
@@ -36,6 +36,69 @@ const showStats = ref(false)
 
 const HINT = 'Drag from a road to another road to build a connection.'
 const SIGNAL_HINT = 'Tap a junction to add traffic lights.'
+const REMOVE_HINT = 'Tap a road you built to remove it.'
+
+/** Player roads to draw, re-read on every snapshot (#33). */
+const roads = computed(() => {
+  void snapshot.value
+  return session.value.roads()
+})
+const roadsVersion = computed(() => {
+  void snapshot.value
+  return session.value.roadsVersion
+})
+const canUndo = computed(() => {
+  void snapshot.value
+  return interactive.value && session.value.canUndo
+})
+const canRedo = computed(() => {
+  void snapshot.value
+  return interactive.value && session.value.canRedo
+})
+/** Whether the selected road has vehicles on it (removing it closes it first). */
+const selectedBusy = computed(() => {
+  void snapshot.value
+  const id = selectedRoad.value
+  return id !== undefined && session.value.isRoadOccupied(id)
+})
+let lastEditMessage = ''
+
+const EDIT_MESSAGES: Record<string, string> = {
+  built: 'Road rebuilt',
+  removed: 'Road removed',
+  closing: 'Road closed: it goes once the cars on it have left',
+  reopened: 'Road reopened',
+}
+
+function describeEdit(result: EditResult | undefined, verb: 'Undo' | 'Redo' | 'Remove'): string {
+  if (!result) return ''
+  if (result.ok) return verb === 'Remove' ? EDIT_MESSAGES[result.action]! : `${verb}: ${EDIT_MESSAGES[result.action]!.toLowerCase()}`
+  if (result.reason === 'nothing-to-undo') return 'Nothing to undo'
+  if (result.reason === 'nothing-to-redo') return 'Nothing to redo'
+  return `${verb} failed: nothing was changed`
+}
+
+function undo(): void {
+  lastEditMessage = describeEdit(game.undo(), 'Undo')
+  showEditMessage()
+}
+
+function redo(): void {
+  lastEditMessage = describeEdit(game.redo(), 'Redo')
+  showEditMessage()
+}
+
+function removeRoad(): void {
+  lastEditMessage = describeEdit(game.removeSelectedRoad(), 'Remove')
+  showEditMessage()
+}
+
+/** Edit messages replace whatever the current tool would say until the next action. */
+function showEditMessage(): void {
+  lastOutcome = tool.value === 'road' ? lastEditMessage : lastOutcome
+  lastSignalMessage = tool.value === 'signal' ? lastEditMessage : lastSignalMessage
+  refreshStatus()
+}
 const status = ref(HINT)
 let lastOutcome = ''
 let lastSignalMessage = ''
@@ -47,21 +110,44 @@ const signal = computed(() => {
   return node === undefined ? undefined : session.value.sim.signalAt(node)
 })
 
-/** Keep the panel on the other half of the screen from the selected junction. */
-const panelSide = computed(() => {
-  const view = signal.value
-  const at = view && canvas.value?.worldToClient(view.junction.center)
+/** Keep a panel on the other half of the screen from what it edits. */
+function sideAwayFrom(point: Point | undefined): 'top' | 'bottom' {
+  const at = point && canvas.value?.worldToClient(point)
   if (!at || typeof window === 'undefined') return 'top'
   return at.y < window.innerHeight / 2 ? 'bottom' : 'top'
+}
+const panelSide = computed(() => sideAwayFrom(signal.value?.junction.center))
+const roadPanelSide = computed(() => {
+  const road = roads.value.find((r) => r.id === selectedRoad.value)
+  if (!road) return 'top'
+  const first = road.points[0]!
+  const last = road.points[road.points.length - 1]!
+  return sideAwayFrom({ x: (first.x + last.x) / 2, y: (first.y + last.y) / 2 })
 })
 
 function chooseTool(next: Tool): void {
   game.setTool(next)
   lastSignalMessage = ''
+  lastEditMessage = ''
   refreshStatus()
 }
 
 function onTap(point: Point): void {
+  if (tool.value === 'remove') {
+    const result = game.tapRoad(point)
+    lastEditMessage =
+      result === 'selected'
+        ? selectedRoad.value === undefined
+          ? 'That road is already closing'
+          : 'Road selected'
+        : result === 'generated'
+          ? 'Only roads you built can be removed'
+          : result === 'none'
+            ? REMOVE_HINT
+            : ''
+    refreshStatus()
+    return
+  }
   const result = game.tapSignal(point)
   lastSignalMessage =
     result === 'placed'
@@ -81,6 +167,10 @@ function removeSignal(): void {
 }
 
 function refreshStatus(): void {
+  if (tool.value === 'remove') {
+    status.value = lastEditMessage || REMOVE_HINT
+    return
+  }
   if (tool.value === 'signal') {
     status.value = lastSignalMessage || SIGNAL_HINT
     return
@@ -108,6 +198,13 @@ function loop(now: number): void {
 }
 
 function onKey(e: KeyboardEvent): void {
+  // Undo / redo (#33): Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y.
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+    e.preventDefault()
+    if (e.key === 'y' || e.key === 'Y' || e.shiftKey) redo()
+    else undo()
+    return
+  }
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
     e.preventDefault()
     game.togglePause()
@@ -182,6 +279,9 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         :heatmap="heatmap"
         :tool="tool"
         :selected-signal="selectedSignal"
+        :roads="roads"
+        :roads-version="roadsVersion"
+        :selected-road="selectedRoad"
         @outcome="onOutcome"
         @tap="onTap"
       />
@@ -203,7 +303,51 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         >
           Lights
         </button>
+        <button
+          type="button"
+          data-testid="tool-remove"
+          :aria-pressed="tool === 'remove'"
+          @click="chooseTool('remove')"
+        >
+          Remove
+        </button>
+        <span class="tools-gap" aria-hidden="true" />
+        <button
+          type="button"
+          class="tool-icon"
+          data-testid="undo"
+          :disabled="!canUndo"
+          aria-label="Undo"
+          title="Undo (Ctrl+Z)"
+          @click="undo"
+        >
+          <span aria-hidden="true">↶</span>
+        </button>
+        <button
+          type="button"
+          class="tool-icon"
+          data-testid="redo"
+          :disabled="!canRedo"
+          aria-label="Redo"
+          title="Redo (Ctrl+Shift+Z)"
+          @click="redo"
+        >
+          <span aria-hidden="true">↷</span>
+        </button>
       </div>
+      <section
+        v-if="interactive && tool === 'remove' && selectedRoad !== undefined"
+        class="signal-panel"
+        :data-side="roadPanelSide"
+        data-testid="road-panel"
+        aria-label="Selected road"
+      >
+        <h2>Your road</h2>
+        <p class="signal-phase" data-testid="road-panel-note">
+          {{ selectedBusy ? 'Cars are on it: it closes now and goes once they have left.' : 'Nobody is on it: it goes at once.' }}
+        </p>
+        <button type="button" class="signal-remove" data-testid="road-remove" @click="removeRoad">Remove road</button>
+      </section>
       <section
         v-if="interactive && tool === 'signal' && signal"
         class="signal-panel"

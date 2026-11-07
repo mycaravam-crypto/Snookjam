@@ -492,6 +492,9 @@ kbd {
 
 .tools {
   left: 12px;
+  /* Never wider than the screen: buttons shrink, then wrap. */
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
 }
 
 .tools button,
@@ -509,6 +512,16 @@ kbd {
   --btn-bg: var(--accent);
   --btn-fg: var(--accent-fg);
   --btn-edge: var(--accent-deep);
+}
+
+.tools-gap {
+  width: 6px;
+}
+
+.tools .tool-icon {
+  min-width: 40px;
+  padding: 0.35em 0.6em;
+  font-size: 1.15rem;
 }
 
 .signal-panel {
@@ -546,6 +559,17 @@ kbd {
 }
 
 @media (max-width: 560px) {
+  .tools {
+    gap: 4px;
+    padding: 4px;
+  }
+  .tools button {
+    padding: 0.3em 0.6em;
+  }
+  .tools .tool-icon {
+    min-width: 36px;
+    padding: 0.3em 0.4em;
+  }
   /* One compact row on phones, clear of the selected junction. */
   .signal-panel {
     left: 12px;

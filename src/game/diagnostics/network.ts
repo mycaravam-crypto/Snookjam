@@ -33,7 +33,7 @@
  *   has not moved for at least `blockedAfterSec` (2 s, the same threshold the
  *   congestion meter uses for blocked vehicles).
  */
-import type { EdgeId, EdgeSplit, NodeId, RoadGraph } from '../roads'
+import type { EdgeId, EdgeSplit, NodeId, RemovalResult, RoadGraph } from '../roads'
 import type { TrafficSim, Vehicle } from '../sim'
 
 export interface DiagnosticsOptions {
@@ -201,6 +201,24 @@ export class NetworkMonitor {
     this.heatByEdge.delete(split.removed)
     this.heatByEdge.set(split.towardA, { ...h })
     this.heatByEdge.set(split.towardB, { ...h })
+    this.cached = undefined
+  }
+
+  /**
+   * Keeps heat consistent when a player road is removed (#33): roads merged
+   * back together keep the hotter half's heat; removed roads drop theirs.
+   */
+  applyRemoval(result: RemovalResult): void {
+    for (const merge of result.merges) {
+      const halves = [this.heatByEdge.get(merge.fromA), this.heatByEdge.get(merge.fromB)].filter((h) => h !== undefined)
+      this.heatByEdge.delete(merge.fromA)
+      this.heatByEdge.delete(merge.fromB)
+      if (halves.length > 0) {
+        const hottest = halves.reduce((x, y) => (y.heat > x.heat ? y : x))
+        this.heatByEdge.set(merge.merged, { ...hottest })
+      }
+    }
+    for (const id of result.removedEdges) this.heatByEdge.delete(id)
     this.cached = undefined
   }
 
