@@ -35,7 +35,7 @@ describe('congestion model', () => {
   })
 
   it('rises with incoming pressure from blocked tunnels', () => {
-    expect(hold(0, input({ pending: 6 }), 5)).toBeCloseTo(5 * (b.pendingRatePerSec - b.flowDecayPerSec), 5)
+    expect(hold(0, input({ pending: b.pendingReference }), 5)).toBeCloseTo(5 * (b.pendingRatePerSec - b.flowDecayPerSec), 5)
   })
 
   it('tolerates normal short waits at junctions', () => {

@@ -12,6 +12,7 @@ export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     congestion: 12.6,
     congestionLevel: 'normal',
     activeVehicles: 17,
+    activeVehicleTarget: 70,
     pendingVehicles: 0,
     vehiclesExited: 40,
     network: EMPTY_NETWORK_STATS,

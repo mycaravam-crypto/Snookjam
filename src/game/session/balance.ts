@@ -59,11 +59,10 @@ export interface BalanceConfig {
 
 export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   levelDurationSec: DEFAULT_CONFIG.levelDurationSec,
-  // Tuned in simulation over many seeds (no player roads): levels 1–2 stay
-  // calm, level 3 builds visible pressure, level 4 is usually lost unless the
-  // player relieves bottlenecks. The roadmap's 4 s start never produced any
-  // queues on generated maps, so level 1 starts at 2.5 s instead.
-  baseSpawnIntervalSec: 2.5,
+  // High-density tuning (#50): keep the initial learning curve, then
+  // replenish traffic more quickly toward a level-specific active fleet target.
+  // Targets grow from 40 vehicles on level 1 to 400 by level 11.
+  baseSpawnIntervalSec: 2.4,
   minSpawnIntervalSec: DEFAULT_CONFIG.minSpawnIntervalSec,
   levelSpawnFactor: 0.75,
   inLevelRampFactor: 0.6,
@@ -85,8 +84,8 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   blockedAfterSec: 2,
   blockedTolerance: 0.1,
   blockedRatePerSec: 8,
-  pendingReference: 6,
-  pendingRatePerSec: 3,
+  pendingReference: 18,
+  pendingRatePerSec: 2,
   exitRelief: 0.75,
   flowDecayPerSec: 1.5,
   levelStartGraceSec: 10,
@@ -135,10 +134,30 @@ export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix
   return { car, van, truck }
 }
 
+/** Active traffic target by level. Later levels continue climbing to a 400-car ceiling. */
+export function targetVehiclesFor(level: number): number {
+  const targets = [40, 70, 100, 150, 200]
+  const normalizedLevel = Math.max(1, Math.floor(level))
+  if (normalizedLevel <= targets.length) return targets[normalizedLevel - 1]!
+  return Math.min(400, 250 + (normalizedLevel - 6) * 30)
+}
+
 export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
-  return Math.min(200, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
+  const usesDefaultCapacity = balance.maxVehicles === DEFAULT_BALANCE.maxVehicles &&
+    balance.maxVehiclesPerLevel === DEFAULT_BALANCE.maxVehiclesPerLevel
+  const target = usesDefaultCapacity
+    ? targetVehiclesFor(level)
+    : Math.min(400, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
+  // Explicitly configured starting fleets (e.g. the 100-car performance
+  // scenario) must always fit inside the active-vehicle limit.
+  const requestedStartingFleet = balance.startingVehicles +
+    balance.startingVehiclesPerLevel * Math.max(0, level - 1)
+  return Math.min(400, Math.max(target, requestedStartingFleet))
 }
 
 export function startingVehiclesFor(balance: BalanceConfig, level: number): number {
-  return Math.min(balance.maxVehicles, balance.startingVehicles + balance.startingVehiclesPerLevel * (level - 1))
+  return Math.min(
+    balance.maxVehicles,
+    balance.startingVehicles + balance.startingVehiclesPerLevel * Math.max(0, level - 1),
+  )
 }

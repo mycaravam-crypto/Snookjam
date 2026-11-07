@@ -36,7 +36,7 @@ const canPause = computed(() => props.snapshot.state === 'running' || paused.val
       </div>
       <div>
         <dt>Cars</dt>
-        <dd data-testid="hud-cars">{{ snapshot.activeVehicles }}</dd>
+        <dd data-testid="hud-cars">{{ snapshot.activeVehicles }} / {{ snapshot.activeVehicleTarget }}</dd>
       </div>
       <div v-if="snapshot.mode === 'objectives'">
         <dt>Score</dt>
