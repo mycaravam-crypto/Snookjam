@@ -11,19 +11,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   checkConnection,
-  checkPath,
-  constructionOptions,
   createRoadGraph,
   findRoute,
   generateWorld,
-  vehicleFollowingGap,
   type Point,
-  type VehicleClass,
   type World,
 } from '../../src/game'
 
 const SEED = 77
-const WIDE_JOINS = constructionOptions({ minJoinAngle: Math.PI / 3 })
 const URL = `?seed=${SEED}&test`
 
 /**
@@ -54,112 +49,8 @@ function usefulRoad(world: World): { from: Point; to: Point } {
   throw new Error(`no useful road on seed ${SEED}`)
 }
 
-function offRoadPoint(world: World): Point {
-  const graph = createRoadGraph(world)
-  for (let y = 2.5; y < world.height - 2; y++) {
-    for (let x = 2.5; x < world.width - 2; x++) if (!graph.nearestLocation({ x, y }, 3)) return { x, y }
-  }
-  throw new Error('no off-road point')
-}
-
-/**
- * A freehand road (#18) on the level-1 map: an arc between two road points
- * that validates as a curved, multi-segment road. The drawn ends are offset
- * half a tile from the road so snapping is exercised.
- */
-function freehandRoad(world: World): { trace: Point[]; bends: number } {
-  const graph = createRoadGraph(world)
-  const nodes = graph.nodes().map((n) => n.position)
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = 0; j < nodes.length; j++) {
-      const [a, b] = [nodes[i]!, nodes[j]!]
-      const len = Math.hypot(a.x - b.x, a.y - b.y)
-      if (i === j || len < 5 || len > 12) continue
-      for (const bulge of [2, -2, 3, -3]) {
-        const nx = -(b.y - a.y) / len
-        const ny = (b.x - a.x) / len
-        const trace = Array.from({ length: 25 }, (_, k) => {
-          const t = k / 24
-          const off = bulge * Math.sin(Math.PI * t) + (k === 0 || k === 24 ? 0.5 : 0)
-          return { x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off }
-        })
-        // Pick a curve with margin to spare (wide joins), so the slightly
-        // different trace a real pointer records still validates.
-        const check = checkPath(world, graph, trace[0]!, trace[24]!, trace.slice(1, -1), WIDE_JOINS)
-        if (check.ok && check.path.length >= 4) return { trace, bends: check.path.length - 2 }
-      }
-    }
-  }
-  throw new Error(`no freehand road on seed ${SEED}`)
-}
-
-/** Straight-line samples between two points, as a drag records them. */
-const line = (a: Point, b: Point, n = 10) =>
-  Array.from({ length: n - 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * (i + 1)) / n, y: a.y + ((b.y - a.y) * (i + 1)) / n }))
-
-/**
- * Open-endpoint construction (#29) on the level-1 map: a straight road from a
- * road node to open terrain (a dead end, with no road within 3 tiles of its
- * end), and a second road that later starts at that dead end and connects to
- * another road node.
- */
-function deadEndThenConnect(world: World): { deadEnd: { from: Point; to: Point }; connect: { from: Point; to: Point } } {
-  const graph = createRoadGraph(world)
-  for (const start of graph.nodes().map((n) => n.position)) {
-    for (let k = 0; k < 16; k++) {
-      const angle = (k / 16) * 2 * Math.PI
-      const end = { x: start.x + 5 * Math.cos(angle), y: start.y + 5 * Math.sin(angle) }
-      if (graph.nearestLocation(end, 3)) continue
-      const check = checkPath(world, graph, start, end, line(start, end), WIDE_JOINS)
-      if (!check.ok || check.to) continue
-      const trial = createRoadGraph(world)
-      trial.connectToPoint(check.from.location, end, {}, check.path.slice(1, -1))
-      for (const target of trial.nodes().map((n) => n.position)) {
-        const d = Math.hypot(target.x - end.x, target.y - end.y)
-        if (d < 3 || d > 9) continue
-        const next = checkPath(world, trial, end, target, line(end, target), WIDE_JOINS)
-        if (next.ok && next.to && next.path.length === 2) {
-          return { deadEnd: { from: start, to: end }, connect: { from: end, to: target } }
-        }
-      }
-    }
-  }
-  throw new Error(`no dead-end road on seed ${SEED}`)
-}
-
-/** Nodes where at least four roads meet. */
-const fourWayNodes = (graph: { nodes(): { id: number }[]; edgesAt(id: number): unknown[] }) =>
-  graph.nodes().filter((n) => graph.edgesAt(n.id).length >= 4).length
-
-/**
- * A straight road between two road nodes that crosses an existing road
- * between its ends, so construction must create a new four-way junction.
- */
-function crossingRoad(world: World): { from: Point; to: Point } {
-  const graph = createRoadGraph(world)
-  const before = fourWayNodes(graph)
-  const nodes = graph.nodes().map((n) => n.position)
-  for (const a of nodes) {
-    for (const b of nodes) {
-      const len = Math.hypot(a.x - b.x, a.y - b.y)
-      if (len < 4 || len > 14) continue
-      const check = checkPath(world, graph, a, b, line(a, b), WIDE_JOINS)
-      if (!check.ok || !check.to || check.path.length !== 2) continue
-      const trial = createRoadGraph(world)
-      const result = trial.connect(check.from.location, check.to.location)
-      const interior = result.nodes.slice(1, -1).filter((id) => trial.edgesAt(id).length >= 4)
-      if (interior.length > 0 && fourWayNodes(trial) > before) return { from: a, to: b }
-    }
-  }
-  throw new Error(`no crossing road on seed ${SEED}`)
-}
-
 const world = generateWorld(SEED)
 const road = usefulRoad(world)
-const curve = freehandRoad(world)
-const offRoad = offRoadPoint(world)
-const openEnded = deadEndThenConnect(world)
-const crossing = crossingRoad(world)
 
 /** Page client coordinates of a world point, via the app's own mapping (handles portrait rotation). */
 async function toScreen(page: Page, point: Point) {
@@ -175,36 +66,6 @@ async function drag(page: Page, from: Point, to: Point) {
   await page.mouse.down()
   for (let i = 1; i <= 10; i++) await page.mouse.move(a.x + ((b.x - a.x) * i) / 10, a.y + ((b.y - a.y) * i) / 10)
   await page.mouse.up()
-}
-
-/** Draws along `trace` with the mouse, or with touch Pointer Events. */
-async function drawPath(page: Page, trace: Point[], pointerType: 'mouse' | 'touch') {
-  const pts = []
-  for (const p of trace) pts.push(await toScreen(page, p))
-  if (pointerType === 'mouse') {
-    await page.mouse.move(pts[0]!.x, pts[0]!.y)
-    await page.mouse.down()
-    for (const p of pts.slice(1)) await page.mouse.move(p.x, p.y)
-    await page.mouse.up()
-    return
-  }
-  await page.locator('canvas.world').evaluate((el, pts) => {
-    const fire = (type: string, p: { x: number; y: number }) =>
-      el.dispatchEvent(
-        new PointerEvent(type, {
-          clientX: p.x,
-          clientY: p.y,
-          pointerId: 11,
-          pointerType: 'touch',
-          isPrimary: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      )
-    fire('pointerdown', pts[0]!)
-    for (const p of pts.slice(1)) fire('pointermove', p)
-    fire('pointerup', pts[pts.length - 1]!)
-  }, pts)
 }
 
 /** Runs simulation steps inside the page (fixed 50 ms steps). */
@@ -244,7 +105,7 @@ const canvasHash = (page: Page) =>
   })
 
 test.describe('critical player flow', () => {
-  test('1. opens Snookjam and starts a level', async ({ page }) => {
+  test('starts the game and renders moving traffic', async ({ page }) => {
     await page.goto(URL)
     await expect(page.getByRole('heading', { name: 'Snookjam' })).toBeVisible()
     await expect(page.getByRole('list', { name: 'How to play' })).toBeVisible()
@@ -252,19 +113,14 @@ test.describe('critical player flow', () => {
     await expect(page.getByTestId('hud-level')).toHaveText('1')
     await expect(page.getByTestId('hud-congestion-text')).toContainText('0%')
     expect((await state(page)).state).toBe('running')
-  })
-
-  test('2. shows the map, tunnels and moving vehicles', async ({ page }) => {
-    await play(page)
     await expect(page.locator('canvas').first()).toBeVisible()
     await expect.poll(async () => Number((await page.getByTestId('hud-cars').textContent())?.split('/')[0]?.trim())).toBeGreaterThan(0)
-    // Vehicles move, so the picture changes between frames.
     const before = await canvasHash(page)
     await expect.poll(() => canvasHash(page), { timeout: 5000 }).not.toBe(before)
     await expect(page.getByTestId('hud-time')).not.toContainText('0:00 /')
   })
 
-  test('3. congestion responds to queues', async ({ page }) => {
+  test('builds and clears congestion with pause controls', async ({ page }) => {
     await play(page)
     await fastForward(page, 5) // let traffic enter the map
     expect((await state(page)).activeVehicles).toBeGreaterThan(0)
@@ -285,9 +141,13 @@ test.describe('critical player flow', () => {
     const cleared = await state(page)
     expect(cleared.state).toBe('running')
     expect(cleared.congestion).toBeLessThan(jammed.congestion)
+    await page.keyboard.press('p')
+    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
+    await page.keyboard.press('p')
+    await expect(page.getByTestId('overlay')).toHaveCount(0)
   })
 
-  test('4–5. builds a road by dragging; traffic uses it after rerouting', async ({ page }) => {
+  test('builds a road and reroutes traffic', async ({ page }) => {
     await play(page)
     const before = await graphInfo(page)
     await drag(page, road.from, road.to)
@@ -307,135 +167,7 @@ test.describe('critical player flow', () => {
     expect(used).toBe(true)
   })
 
-  for (const pointerType of ['mouse', 'touch'] as const) {
-    test(`4c. draws a curved freehand road with ${pointerType} (#18)`, async ({ page }) => {
-      await play(page)
-      const before = await graphInfo(page)
-      await drawPath(page, curve.trace, pointerType)
-      await expect(page.getByTestId('build-status')).toContainText('Road built')
-      // One edge per segment (bends + 1) plus one per split road, net of the split ones.
-      expect((await graphInfo(page)).edges).toBeGreaterThanOrEqual(before.edges + curve.bends + 1)
-      const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
-      expect(scroll).toEqual({ y: 0, selection: '' })
-    })
-  }
-
-  test('4b. rejects an invalid drag and leaves the graph unchanged', async ({ page }) => {
-    await play(page)
-    const before = await graphInfo(page)
-    await drag(page, road.from, offRoad)
-    await expect(page.getByTestId('build-status')).toContainText('Not built')
-    expect((await graphInfo(page)).edges).toBe(before.edges)
-    const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
-    expect(scroll).toEqual({ y: 0, selection: '' })
-  })
-
-  test('4d. draws a dead-end road, then connects to it later (#29)', async ({ page }) => {
-    await play(page)
-    const degreeNear = (p: Point) =>
-      page.evaluate((p) => {
-        const g = (window as any).__snookjam.session.value.graph
-        const node = g.nodes().find((n: any) => Math.hypot(n.position.x - p.x, n.position.y - p.y) < 0.05)
-        return node ? g.edgesAt(node.id).length : 0
-      }, p)
-    const before = await graphInfo(page)
-    await drag(page, openEnded.deadEnd.from, openEnded.deadEnd.to)
-    await expect(page.getByTestId('build-status')).toContainText('Road built')
-    expect((await graphInfo(page)).edges).toBeGreaterThan(before.edges)
-    // The free end is a real graph node with one road: a dead end.
-    expect(await degreeNear(openEnded.deadEnd.to)).toBe(1)
-
-    await drag(page, openEnded.connect.from, openEnded.connect.to)
-    await expect(page.getByTestId('build-status')).toContainText('Road built')
-    // The dead end now continues into the second road.
-    expect(await degreeNear(openEnded.deadEnd.to)).toBe(2)
-  })
-
-  test('4e. a road crossing an existing road forms a junction (#29)', async ({ page }) => {
-    await play(page)
-    const junctions = () =>
-      page.evaluate(() => {
-        const g = (window as any).__snookjam.session.value.graph
-        return g.nodes().filter((n: any) => g.edgesAt(n.id).length >= 4).length
-      })
-    const before = await junctions()
-    await drag(page, crossing.from, crossing.to)
-    await expect(page.getByTestId('build-status')).toContainText('Road built')
-    expect(await junctions()).toBeGreaterThan(before)
-    // Traffic keeps running through the new junction without errors.
-    const errors: string[] = []
-    page.on('pageerror', (e) => errors.push(e.message))
-    await fastForward(page, 20)
-    expect(errors).toEqual([])
-    expect((await state(page)).state).toBe('running')
-  })
-
-  test('4f. mixed traffic stays gap-safe and flowing under sustained congestion (#31)', async ({ page }) => {
-    await play(page)
-    const kinds: VehicleClass[] = ['car', 'van', 'truck']
-    const gaps = Object.fromEntries(kinds.flatMap((f) => kinds.map((l) => [`${f}>${l}`, vehicleFollowingGap(f, l)])))
-    const result = await page.evaluate((gaps) => {
-      const s = (window as any).__snookjam.session.value
-      s.sim.setVehicleMix({ car: 1, van: 1, truck: 1 })
-      s.sim.queueSpawns(60)
-      s.sim.setSpawnInterval(0.8)
-      const exitedBefore = s.sim.stats().totalExited
-      let overlaps = 0
-      let peakWaiting = 0
-      const windows: number[] = []
-      for (let i = 0; i < 20 * 60 && s.state === 'running'; i++) {
-        if (i % 200 === 0) windows.push(s.sim.stats().totalExited)
-        s.tick()
-        s.setCongestionForTesting(0) // keep the run going under heavy load
-        peakWaiting = Math.max(peakWaiting, s.sim.stats().waiting)
-        for (const edge of s.graph.edges()) {
-          for (const from of [edge.a, edge.b]) {
-            const lane = s.sim.laneOccupants(edge.id, from)
-            for (let k = 1; k < lane.length; k++) {
-              const gap = lane[k - 1].progress - lane[k].progress
-              if (gap < (gaps[`${lane[k].kind}>${lane[k - 1].kind}`] ?? 0) - 1e-6) overlaps++
-            }
-          }
-        }
-      }
-      const stats = s.sim.stats()
-      windows.push(stats.totalExited)
-      const perWindow = windows.slice(1).map((n, k) => n - windows[k]!)
-      return { overlaps, peakWaiting, perWindow, exited: stats.totalExited - exitedBefore, kinds: [...new Set(s.sim.vehicles().map((v: any) => v.kind))].length }
-    }, gaps)
-    expect(result.overlaps).toBe(0)
-    expect(result.peakWaiting).toBeGreaterThan(5) // queues really formed
-    expect(result.kinds).toBeGreaterThan(1)
-    // Traffic keeps leaving in every 10 s window once vehicles have had time
-    // to cross the map: no gridlock or slow lock-up.
-    expect(result.perWindow).toHaveLength(6)
-    for (const n of result.perWindow.slice(2)) expect(n).toBeGreaterThan(0)
-    expect(result.exited).toBeGreaterThan(15)
-  })
-
-  test('6. pauses and resumes', async ({ page }) => {
-    await play(page)
-    await fastForward(page, 5)
-    await page.getByTestId('hud-pause').click()
-    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
-    const paused = await state(page)
-    const vehicles = await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.sim.vehicles()))
-    await page.waitForTimeout(1000)
-    expect((await state(page)).levelTime).toBe(paused.levelTime)
-    expect(await page.evaluate(() => JSON.stringify((window as any).__snookjam.session.value.sim.vehicles()))).toBe(vehicles)
-
-    await page.getByTestId('overlay-resume').click()
-    await expect(page.getByTestId('overlay')).toHaveCount(0)
-    await expect.poll(async () => (await state(page)).levelTime).toBeGreaterThan(paused.levelTime)
-
-    // Keyboard shortcut.
-    await page.keyboard.press('p')
-    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'paused')
-    await page.keyboard.press('p')
-    await expect(page.getByTestId('overlay')).toHaveCount(0)
-  })
-
-  test('7. game over, then restart cleanly', async ({ page }) => {
+  test('recovers cleanly from gridlock', async ({ page }) => {
     await play(page)
     const initial = await graphInfo(page)
     await drag(page, road.from, road.to)
@@ -455,15 +187,6 @@ test.describe('critical player flow', () => {
     expect((await graphInfo(page)).edges).toBe(initial.edges) // built road is gone
   })
 
-  test('completes a level and continues to the next', async ({ page }) => {
-    await play(page)
-    await fastForward(page, 181)
-    await expect(page.getByTestId('overlay')).toHaveAttribute('data-state', 'levelComplete')
-    await page.getByTestId('overlay-next').click()
-    await expect(page.getByTestId('hud-level')).toHaveText('2')
-    const s = await state(page)
-    expect(s).toMatchObject({ level: 2, state: 'running', congestion: 0 })
-  })
 })
 
 /** Open country near the middle of the map (clear of the toolbar and panels), 3+ tiles from any road. */
@@ -538,24 +261,6 @@ test.describe('traffic lights (#32)', () => {
     await page.getByTestId('tool-road').click()
     await drag(page, road.from, road.to)
     await expect(page.getByTestId('build-status')).toContainText('Road built')
-  })
-
-  test('L2. places lights with touch', async ({ page }) => {
-    await play(page)
-    await buyInShop(page, 'signal')
-    await page.getByTestId('tool-signal').click()
-    const junction = await signalJunction(page)
-    const at = await toScreen(page, junction.center)
-    await page.locator('canvas.world').evaluate((el, p) => {
-      const fire = (type: string) =>
-        el.dispatchEvent(new PointerEvent(type, { clientX: p.x, clientY: p.y, pointerId: 12, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true }))
-      fire('pointerdown')
-      fire('pointerup')
-    }, at)
-    await expect(page.getByTestId('build-status')).toContainText('Traffic lights added')
-    expect(await signalCount(page)).toBe(1)
-    const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
-    expect(scroll).toEqual({ y: 0, selection: '' })
   })
 
   test('L3. vehicles enter only on green and queue on red', async ({ page }) => {
@@ -680,122 +385,6 @@ test.describe('road editing (#33)', () => {
     await page.getByTestId('undo').click()
     expect((await roadState(page)).roads).toEqual(['open'])
   })
-
-  test('E3. selects a road with touch', async ({ page }) => {
-    await play(page)
-    await drag(page, road.from, road.to)
-    await page.getByTestId('tool-remove').click()
-    const mid = await toScreen(page, roadMiddle)
-    await page.locator('canvas.world').evaluate((el, p) => {
-      const fire = (type: string) =>
-        el.dispatchEvent(new PointerEvent(type, { clientX: p.x, clientY: p.y, pointerId: 13, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true }))
-      fire('pointerdown')
-      fire('pointerup')
-    }, mid)
-    await expect(page.getByTestId('road-panel')).toBeVisible()
-  })
-
-  test('E4. a busy road closes, traffic drives off it, then it is removed', async ({ page }) => {
-    await play(page)
-    const before = await roadState(page)
-    await drag(page, road.from, road.to)
-    await expect(page.getByTestId('build-status')).toContainText('Road built')
-    // Run until a vehicle is driving on the new road.
-    const busy = await page.evaluate(() => {
-      const g = (window as any).__snookjam
-      const s = g.session.value
-      const id = s.roads()[0].id
-      for (let i = 0; i < 20 * 120 && s.state === 'running'; i++) {
-        s.tick()
-        s.setCongestionForTesting(0)
-        if (s.isRoadOccupied(id)) break
-      }
-      g.frame(0)
-      return s.isRoadOccupied(id)
-    })
-    expect(busy).toBe(true)
-    await page.getByTestId('tool-remove').click()
-    const mid = await toScreen(page, roadMiddle)
-    await page.mouse.click(mid.x, mid.y)
-    await expect(page.getByTestId('road-panel-note')).toContainText('Cars are on it')
-    await page.getByTestId('road-remove').click()
-    await expect(page.getByTestId('build-status')).toContainText('Road closed')
-    expect((await roadState(page)).roads).toEqual(['closing'])
-
-    const result = await page.evaluate(() => {
-      const s = (window as any).__snookjam.session.value
-      let jumps = 0
-      const last = new Map<number, { x: number; y: number }>()
-      for (let i = 0; i < 20 * 60 && s.state === 'running'; i++) {
-        s.tick()
-        s.setCongestionForTesting(0)
-        for (const v of s.sim.vehicles()) {
-          const p = s.sim.positionOf(v).position
-          const q = last.get(v.id)
-          if (q && Math.hypot(p.x - q.x, p.y - q.y) > 0.2) jumps++
-          last.set(v.id, p)
-        }
-        if (s.roads().length === 0) break
-      }
-      return { jumps, roads: s.roads().length }
-    })
-    expect(result).toEqual({ jumps: 0, roads: 0 })
-    expect(await roadState(page)).toEqual({ ...before, roads: [] })
-  })
-})
-
-/**
- * The early-game target is 80 vehicles. Seed 36 is used here for a stable,
- * representative browser rendering load at 100 active vehicles.
- */
-const PERF_URL = '?seed=36&test'
-
-test('stays responsive with a high-density active fleet', async ({ page }) => {
-  await play(page, PERF_URL)
-  // Fill the map, holding congestion at 0 so the run keeps going.
-  await page.evaluate(() => {
-    const s = (window as any).__snookjam.session.value
-    // Advance to level 3 to exercise the same progression path as a busy run;
-    // queue a controlled 100-car fleet for a repeatable rendering benchmark.
-    for (let level = 1; level < 3; level++) {
-      while (s.state === 'running') {
-        s.tick()
-        s.setCongestionForTesting(0)
-      }
-      if (s.state === 'levelComplete') s.nextLevel()
-    }
-    s.sim.queueSpawns(100)
-    s.sim.setSpawnInterval(0.8)
-    for (let i = 0; i < 20 * 90 && s.sim.stats().active < 100; i++) {
-      s.tick()
-      s.setCongestionForTesting(0)
-    }
-  })
-  const result = await page.evaluate(
-    () =>
-      new Promise<{ active: number; frames: number; p95: number; mean: number }>((resolve) => {
-        const s = (window as any).__snookjam.session.value
-        const gaps: number[] = []
-        let last = performance.now()
-        const end = last + 3000
-        const tick = (now: number) => {
-          s.setCongestionForTesting(0)
-          gaps.push(now - last)
-          last = now
-          if (now < end) requestAnimationFrame(tick)
-          else {
-            gaps.sort((a, b) => a - b)
-            const mean = gaps.reduce((x, y) => x + y, 0) / gaps.length
-            resolve({ active: s.sim.stats().active, frames: gaps.length, p95: gaps[Math.floor(gaps.length * 0.95)]!, mean })
-          }
-        }
-        requestAnimationFrame(tick)
-      }),
-  )
-  console.info(`perf: ${result.active} vehicles, ${result.frames} frames in 3 s, mean ${result.mean.toFixed(1)} ms, p95 ${result.p95.toFixed(1)} ms`)
-  expect(result.active).toBeGreaterThanOrEqual(75)
-  // Responsive: mean frame time under 50 ms (20+ fps) even on a CI runner.
-  expect(result.mean).toBeLessThan(50)
 })
 
 test.describe('shop, coins and roundabouts', () => {

@@ -7,11 +7,14 @@ const base = process.env.GITHUB_ACTIONS === 'true' ? '/Snookjam/' : '/'
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 60_000,
+  timeout: 45_000,
   fullyParallel: true,
+  // Browser tests are deterministic and already exercise the real UI. Avoid
+  // silently doubling a slow CI run when a genuine regression occurs.
+  retries: 0,
+  workers: process.env.CI ? 2 : undefined,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['github']] : 'list',
+  reporter: process.env.CI ? [['dot'], ['github']] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}${base}`,
     trace: 'off',
@@ -21,6 +24,6 @@ export default defineConfig({
     command: `npx vite preview --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}${base}`,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 60_000,
   },
 })
