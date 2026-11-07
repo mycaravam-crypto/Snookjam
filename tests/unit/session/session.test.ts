@@ -162,6 +162,37 @@ describe('GameSession lifecycle', () => {
     expect(play()).toEqual(play())
   })
 
+
+  it('round-trips a paused game and resumes deterministic traffic', () => {
+    const original = new GameSession({ seed: 42 })
+    original.start()
+    ticks(original, 8)
+    original.pause()
+    const saved = JSON.parse(JSON.stringify(original.toSaveData()))
+    const restored = GameSession.fromSaveData(saved)
+    expect(restored.state).toBe('paused')
+    expect(restored.toSaveData()).toEqual(saved)
+
+    original.resume()
+    restored.resume()
+    ticks(original, 5)
+    ticks(restored, 5)
+    expect(restored.snapshot()).toEqual(original.snapshot())
+    expect(restored.graph.toState()).toEqual(original.graph.toState())
+    expect(restored.sim.toState()).toEqual(original.sim.toState())
+    expect(restored.diagnostics.toState()).toEqual(original.diagnostics.toState())
+  })
+
+  it('rejects unsupported save versions and corrupt graph data', () => {
+    const game = new GameSession({ seed: 42 })
+    game.start()
+    game.pause()
+    const saved = JSON.parse(JSON.stringify(game.toSaveData()))
+    expect(() => GameSession.fromSaveData({ ...saved, version: 99 })).toThrow(/unsupported save version/)
+    const corrupt = { ...saved, graph: { ...saved.graph, edges: [{ ...saved.graph.edges[0], a: 999999 }] } }
+    expect(() => GameSession.fromSaveData(corrupt)).toThrow()
+  })
+
   it('builds roads through the session and keeps vehicles in place', () => {
     const { s } = session()
     expect(() => s.connectRoad({ kind: 'node', node: 0 }, { kind: 'node', node: 1 })).toThrow(/ready/)

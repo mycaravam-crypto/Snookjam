@@ -42,6 +42,15 @@ export interface RoadEdge {
   readonly road?: number
 }
 
+export interface RoadGraphState {
+  readonly nodes: readonly RoadNode[]
+  readonly edges: readonly RoadEdge[]
+  readonly nextNodeId: number
+  readonly nextEdgeId: number
+  readonly version: number
+  readonly splitNodes: readonly NodeId[]
+}
+
 export interface EdgeOptions {
   speedLimit?: number
   capacity?: number
@@ -100,6 +109,32 @@ export class RoadGraph {
     return this.edgeMap.size
   }
 
+  static fromState(state: RoadGraphState): RoadGraph {
+    if (!state || !Array.isArray(state.nodes) || !Array.isArray(state.edges) || !Number.isInteger(state.nextNodeId) || !Number.isInteger(state.nextEdgeId) || !Number.isInteger(state.version) || state.version < 0 || !Array.isArray(state.splitNodes)) throw new TypeError('invalid road graph save data')
+    const graph = new RoadGraph()
+    for (const node of state.nodes) {
+      if (!node || !Number.isInteger(node.id) || !Number.isFinite(node.position?.x) || !Number.isFinite(node.position?.y)) throw new TypeError('invalid road graph node')
+      graph.addNode(node.position, node.id)
+    }
+    for (const edge of state.edges) {
+      if (!edge || !Number.isInteger(edge.id) || !graph.hasNode(edge.a) || !graph.hasNode(edge.b)) throw new TypeError('invalid road graph edge')
+      graph.addEdge(edge.a, edge.b, edge, edge.id)
+    }
+    for (const id of state.splitNodes) {
+      if (!graph.hasNode(id)) throw new TypeError('invalid split node')
+      graph.splitNodes.add(id)
+    }
+    if (state.nextNodeId < graph.nextNodeId || state.nextEdgeId < graph.nextEdgeId) throw new TypeError('invalid road graph id counters')
+    graph.nextNodeId = state.nextNodeId
+    graph.nextEdgeId = state.nextEdgeId
+    graph.versionCounter = state.version
+    return graph
+  }
+
+  toState(): RoadGraphState {
+    return { nodes: this.nodes(), edges: this.edges(), nextNodeId: this.nextNodeId, nextEdgeId: this.nextEdgeId, version: this.versionCounter, splitNodes: [...this.splitNodes] }
+  }
+
   /** Builds a graph from plain layout data, preserving node ids. */
   static fromLayout(layout: RoadLayout): RoadGraph {
     const graph = new RoadGraph()
@@ -137,7 +172,7 @@ export class RoadGraph {
     return node
   }
 
-  addEdge(a: NodeId, b: NodeId, options: EdgeOptions = {}): RoadEdge {
+  addEdge(a: NodeId, b: NodeId, options: EdgeOptions = {}, id?: EdgeId): RoadEdge {
     const na = this.requireNode(a)
     const nb = this.requireNode(b)
     if (a === b) throw new Error('an edge cannot connect a node to itself')
@@ -150,7 +185,7 @@ export class RoadGraph {
     if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError('capacity must be a positive integer')
 
     const edge: RoadEdge = Object.freeze({
-      id: this.nextEdgeId++,
+      id: id ?? this.nextEdgeId,
       a,
       b,
       length,
@@ -159,6 +194,8 @@ export class RoadGraph {
       blocked: options.blocked ?? false,
       ...(options.road === undefined ? {} : { road: options.road }),
     })
+    if (!Number.isInteger(edge.id) || edge.id < 0 || this.edgeMap.has(edge.id)) throw new RangeError('invalid edge id')
+    this.nextEdgeId = Math.max(this.nextEdgeId, edge.id + 1)
     this.edgeMap.set(edge.id, edge)
     this.incidence.get(a)!.push(edge.id)
     this.incidence.get(b)!.push(edge.id)

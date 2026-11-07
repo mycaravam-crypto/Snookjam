@@ -5,8 +5,8 @@ import { formatTime } from '../format'
 import { objectiveGoal, objectiveValue, STATUS_ICONS } from '../objectives'
 import ConfettiBurst from './ConfettiBurst.vue'
 
-const props = defineProps<{ snapshot: SessionSnapshot }>()
-defineEmits<{ resume: []; restart: []; nextLevel: []; newMap: []; quit: [] }>()
+const props = defineProps<{ snapshot: SessionSnapshot; hasSave?: boolean }>()
+defineEmits<{ resume: []; restart: []; nextLevel: []; newMap: []; quit: []; save: []; load: [] }>()
 
 const visible = computed(() => ['paused', 'levelComplete', 'gameOver'].includes(props.snapshot.state))
 const scored = computed(() => props.snapshot.mode === 'objectives')
@@ -35,6 +35,8 @@ watch(
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-resume" @click="$emit('resume')">Resume</button>
           <button type="button" data-testid="overlay-restart" @click="$emit('restart')">Restart level 1</button>
+          <button type="button" data-testid="overlay-save" @click="$emit('save')">Save game</button>
+          <button type="button" data-testid="overlay-load" :disabled="!hasSave" @click="$emit('load')">Load saved game</button>
           <button type="button" data-testid="overlay-new-map" @click="$emit('newMap')">New map</button>
           <button type="button" data-testid="overlay-quit" @click="$emit('quit')">Quit to title</button>
         </div>

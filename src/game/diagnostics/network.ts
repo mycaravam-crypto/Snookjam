@@ -73,6 +73,20 @@ export interface NetworkStats {
   readonly blockedJunctions: number
 }
 
+export interface NetworkMonitorState {
+  readonly version: 1
+  readonly heatByEdge: readonly (readonly [EdgeId, MutableHeat])[]
+  readonly tracked: readonly (readonly [number, Tracked])[]
+  readonly exitTimes: readonly number[]
+  readonly blocked: readonly NodeId[]
+  readonly elapsed: number
+  readonly completed: number
+  readonly totalTravel: number
+  readonly totalWait: number
+  readonly waitingNow: number
+  readonly activeNow: number
+}
+
 export interface RoadHeat {
   readonly edge: EdgeId
   /** 0–1 smoothed queue occupancy. */
@@ -126,6 +140,52 @@ export class NetworkMonitor {
   ) {
     this.options = { ...DEFAULT_DIAGNOSTICS, queueSpacing: sim.minGap, ...options }
     for (const v of sim.vehicles()) this.tracked.set(v.id, { spawnedAt: v.spawnedAt, waitTime: v.waitTime })
+  }
+
+
+  toState(): NetworkMonitorState {
+    return {
+      version: 1,
+      heatByEdge: [...this.heatByEdge].map(([id, heat]) => [id, { ...heat }] as const),
+      tracked: [...this.tracked].map(([id, value]) => [id, { ...value }] as const),
+      exitTimes: [...this.exitTimes],
+      blocked: [...this.blocked],
+      elapsed: this.elapsed,
+      completed: this.completed,
+      totalTravel: this.totalTravel,
+      totalWait: this.totalWait,
+      waitingNow: this.waitingNow,
+      activeNow: this.activeNow,
+    }
+  }
+
+  restoreState(state: NetworkMonitorState): void {
+    const valid = (n: number) => Number.isFinite(n) && n >= 0
+    if (!state || state.version !== 1 || !Array.isArray(state.heatByEdge) || !Array.isArray(state.tracked) ||
+      !Array.isArray(state.exitTimes) || !Array.isArray(state.blocked) ||
+      ![state.elapsed, state.completed, state.totalTravel, state.totalWait, state.waitingNow, state.activeNow].every(valid)) {
+      throw new TypeError('invalid diagnostics save data')
+    }
+    this.heatByEdge.clear()
+    for (const [id, heat] of state.heatByEdge) {
+      if (!this.graph.getEdge(id) || !valid(heat.heat) || heat.heat > 1 || !valid(heat.queuedFor)) throw new TypeError('invalid saved road heat')
+      this.heatByEdge.set(id, { ...heat })
+    }
+    this.tracked.clear()
+    for (const [id, value] of state.tracked) {
+      if (!this.sim.getVehicle(id) || !valid(value.spawnedAt) || !valid(value.waitTime)) throw new TypeError('invalid tracked vehicle')
+      this.tracked.set(id, { ...value })
+    }
+    if (state.tracked.length !== this.sim.vehicles().length || state.exitTimes.some((time) => !valid(time))) throw new TypeError('invalid diagnostics history')
+    this.exitTimes.splice(0, this.exitTimes.length, ...state.exitTimes)
+    this.blocked = [...state.blocked]
+    this.elapsed = state.elapsed
+    this.completed = state.completed
+    this.totalTravel = state.totalTravel
+    this.totalWait = state.totalWait
+    this.waitingNow = state.waitingNow
+    this.activeNow = state.activeNow
+    this.cached = undefined
   }
 
   /** Call once after each `sim.step(dt)`. */
