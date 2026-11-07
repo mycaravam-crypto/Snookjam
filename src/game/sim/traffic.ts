@@ -1413,14 +1413,11 @@ export class TrafficSim {
       if (inside(v) !== 0 && this.lightAt(v.steps[v.stepIndex]!) !== undefined && this.lightAt(v.steps[v.stepIndex]!) !== 'green') continue
       const exiting = v.stepIndex + 1 >= v.steps.length
       if (exiting) {
-        // Leaving the map through this tunnel: nothing to make room for.
+        // Reserve the portal box, then start its clearance interval when the
+        // vehicle actually leaves the map in advanceAtJunction().
         this.junctionHolder.set(key, v.id)
         v.holding = key
         this.arrivals.delete(v.id)
-        {
-        const clearSec = this.clearSecFor(key)
-        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
-      }
         continue
       }
       if (!this.remainingValid(v)) continue
