@@ -33,7 +33,7 @@ describe('continuous corner driving', () => {
       spawnIntervalSec: 1000,
     })
     const speeds: number[] = []
-    for (let i = 0; i < 20 * 12 && sim.vehicles().length > 0; i++) {
+    for (let i = 0; i < 20 * 12; i++) {
       sim.step(DT)
       const vehicle = sim.vehicles()[0]
       if (vehicle) speeds.push(vehicle.speed)
