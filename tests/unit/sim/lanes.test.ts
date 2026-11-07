@@ -110,6 +110,7 @@ describe('curved roads', () => {
       segments: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
     })
     const sim = new TrafficSim(g, { portals: [0, 2], random: { next: () => 0 }, startingVehicles: 1 })
+    sim.step(DT)
     const vehicle = sim.vehicles()[0]!
     expect(vehicle.steps).toHaveLength(2)
 
