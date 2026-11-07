@@ -15,6 +15,7 @@ import {
 export interface WorldOptions {
   readonly width: number
   readonly height: number
+  readonly theme: import('./types').WorldTheme
   readonly settlementCount: number
   readonly portalCount: number
   /** Noise threshold below which terrain is water (0 disables water). */
@@ -28,6 +29,7 @@ export interface WorldOptions {
 export const DEFAULT_WORLD_OPTIONS: WorldOptions = Object.freeze({
   width: 40,
   height: 30,
+  theme: 'countryside',
   settlementCount: 5,
   portalCount: 4,
   waterLevel: 0.34,
@@ -65,7 +67,13 @@ const SETTLEMENT_NAMES = [
  * is always connectable.
  */
 export function generateWorld(seed: number | string, overrides: Partial<WorldOptions> = {}): World {
-  const options = { ...DEFAULT_WORLD_OPTIONS, ...overrides }
+  const theme = overrides.theme ?? DEFAULT_WORLD_OPTIONS.theme
+  const themeDefaults: Partial<WorldOptions> = theme === 'city'
+    ? { settlementCount: 9, settlementSpacing: 5, waterLevel: 0.22 }
+    : theme === 'desert'
+      ? { settlementCount: 4, settlementSpacing: 9, waterLevel: 0.18 }
+      : {}
+  const options = { ...DEFAULT_WORLD_OPTIONS, ...themeDefaults, ...overrides, theme }
   validateOptions(options)
   const base = normalizeSeed(seed)
   for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
@@ -149,6 +157,7 @@ function tryGenerate(seed: number, attempt: number, o: WorldOptions, fallback: b
 
   return deepFreeze({
     seed,
+    theme: o.theme,
     width,
     height,
     terrain,
@@ -170,7 +179,15 @@ function generateTerrain(rng: Rng, o: WorldOptions): Terrain[] {
     const e = elevation[i]!
     const m = moisture[i]!
     if (e < o.waterLevel) terrain[i] = 'water'
-    else if (m > 0.6) terrain[i] = 'forest'
+    else if (o.theme === 'city') {
+      if (m > 0.76) terrain[i] = 'forest'
+      else if (farmland[i]! > 0.43) terrain[i] = 'field'
+      else terrain[i] = 'grass'
+    } else if (o.theme === 'desert') {
+      if (m > 0.82) terrain[i] = 'forest' // sparse scrub and rocky outcrops
+      else if (farmland[i]! > 0.48) terrain[i] = 'field' // exposed dune fields
+      else terrain[i] = 'grass' // open sand
+    } else if (m > 0.6) terrain[i] = 'forest'
     else if (farmland[i]! > 0.55 && m < 0.55) terrain[i] = 'field'
     else terrain[i] = 'grass'
   }
