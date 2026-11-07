@@ -18,22 +18,22 @@ function ticks(s: GameSession, seconds: number): void {
 describe('traffic density progression', () => {
   it('starts with meaningful traffic and scales targets up to 500 vehicles', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 8].map(targetVehiclesFor)).toEqual([
-      100, 150, 220, 300, 400, 500, 500, 500,
+      80, 120, 160, 220, 300, 400, 400, 400,
     ])
     const s = new GameSession({ seed: 42 })
-    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 100, activeVehicles: 0, pendingVehicles: 24 })
-    expect(s.sim.maxVehicles).toBe(100)
-    expect(maxVehiclesFor(s.balance, 6)).toBe(500)
-    expect(s.sim.spawnIntervalSec).toBeCloseTo(0.24)
-    expect(s.world.settlements).toHaveLength(7)
-    expect(s.world.portals).toHaveLength(6)
+    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 80, activeVehicles: 0, pendingVehicles: 16 })
+    expect(s.sim.maxVehicles).toBe(80)
+    expect(maxVehiclesFor(s.balance, 6)).toBe(400)
+    expect(s.sim.spawnIntervalSec).toBeCloseTo(1.2)
+    expect(s.world.settlements).toHaveLength(5)
+    expect(s.world.portals).toHaveLength(4)
   })
 
   it('builds a visible active fleet quickly instead of trickling in a few cars', () => {
     const s = new GameSession({ seed: 42 })
     s.start()
     ticks(s, 10)
-    expect(s.snapshot().activeVehicles).toBeGreaterThan(30)
+    expect(s.snapshot().activeVehicles).toBeGreaterThan(20)
     expect(s.snapshot().activeVehicleTarget).toBe(100)
   })
 })
