@@ -44,6 +44,20 @@
 import { DEFAULT_CONFIG } from '../config'
 import { junctionStopDistance, laneOffset, minFollowingDistance, ROAD_GEOMETRY, validateRoadGeometry, type RoadGeometry } from './lanes'
 import { VEHICLE_SPACING, findRoute, type EdgeSplit, type Point, type NodeId, type RoadGraph, type RouteStep } from '../roads'
+import {
+  defaultPhases,
+  describeJunction,
+  DEFAULT_SIGNAL_GREEN_SEC,
+  lightFor,
+  normalizeAngle,
+  orderByRightOfWay,
+  signalPhaseAt,
+  SIGNAL_CLEARANCE_SEC,
+  type Junction,
+  type JunctionLane,
+  type SignalLight,
+  type SignalOptions,
+} from './junctions'
 
 /** Structural subset of the world Rng: uniform float in [0, 1). */
 export interface RandomSource {
@@ -155,6 +169,32 @@ export interface Vehicle {
   readonly spawnedAt: number
 }
 
+/** A placed traffic signal and what it currently shows (#32). */
+export interface SignalView {
+  /** The node the signal was placed on. */
+  readonly node: NodeId
+  readonly junction: Junction
+  readonly greenSec: number
+  readonly clearanceSec: number
+  /** Approach indices per phase. */
+  readonly phases: readonly (readonly number[])[]
+  readonly phase: number
+  readonly clearance: boolean
+  /** Seconds until the current green or clearance ends. */
+  readonly remaining: number
+  /** Light per approach, in `junction.approaches` order. */
+  readonly lights: readonly SignalLight[]
+}
+
+/** What a vehicle will do at the end of its current road (#32). */
+export interface VehicleIntent {
+  readonly turn: 'left' | 'right' | 'straight' | 'exit'
+  /** Distance to the end of the current road, in tiles. */
+  readonly distance: number
+  /** Whether that end is a junction box. */
+  readonly junction: boolean
+}
+
 export interface StepReport {
   readonly spawned: number
   readonly exited: number
@@ -245,6 +285,12 @@ export class TrafficSim {
    */
   private stopDistances = new Map<string, number>()
   private junctionsVersion = -1
+  /** Junction key -> described junction (approaches, exits, movements). */
+  private junctionInfo = new Map<NodeId, Junction>()
+  /** Placed signals by the node they were placed on (#32). */
+  private readonly signalMap = new Map<NodeId, { greenSec: number; startedAt: number }>()
+  /** Vehicle id -> box key and time it started waiting for that box (right-of-way). */
+  private readonly arrivals = new Map<number, { key: NodeId; at: number }>()
 
   constructor(graph: RoadGraph, options: TrafficOptions) {
     this.graph = graph
@@ -400,6 +446,208 @@ export class TrafficSim {
     return key === undefined ? undefined : this.junctionHolder.get(key)
   }
 
+  /** Every junction box with its approaches, exits and movements (#32). */
+  junctions(): readonly Junction[] {
+    this.refreshJunctions()
+    return [...this.junctionInfo.values()]
+  }
+
+  /** The junction box containing `node`, if it is one. */
+  junctionAt(node: NodeId): Junction | undefined {
+    this.refreshJunctions()
+    const key = this.junctionKeys.get(node)
+    return key === undefined ? undefined : this.junctionInfo.get(key)
+  }
+
+  /** Whether a junction can take traffic signals: not a tunnel, three or more approaches. */
+  isSignalJunction(junction: Junction): boolean {
+    return !junction.portal && junction.approaches.length >= 3
+  }
+
+  /** Nearest junction that can take signals, with its centre within `maxDistance` tiles of `point`. */
+  signalJunctionNear(point: Point, maxDistance: number): Junction | undefined {
+    let best: { j: Junction; d: number } | undefined
+    for (const j of this.junctions()) {
+      if (!this.isSignalJunction(j)) continue
+      const d = Math.hypot(j.center.x - point.x, j.center.y - point.y)
+      if (d <= maxDistance && (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && j.key < best.j.key))) best = { j, d }
+    }
+    return best?.j
+  }
+
+  /**
+   * Places a fixed-time traffic signal on the junction containing `node`
+   * (#32), or reconfigures the one already there. Its cycle starts now with
+   * the first phase green. Returns false if that junction cannot take signals.
+   */
+  placeSignal(node: NodeId, options: SignalOptions = {}): boolean {
+    const junction = this.junctionAt(node)
+    if (!junction || !this.isSignalJunction(junction)) return false
+    const greenSec = options.greenSec ?? DEFAULT_SIGNAL_GREEN_SEC
+    if (!(greenSec > 0) || !Number.isFinite(greenSec)) throw new RangeError('greenSec must be positive')
+    const existing = this.signalAnchor(junction.key)
+    if (existing !== undefined) this.signalMap.get(existing)!.greenSec = greenSec
+    else this.signalMap.set(node, { greenSec, startedAt: this.time })
+    return true
+  }
+
+  /** Removes the signal on the junction containing `node`. Returns whether there was one. */
+  removeSignal(node: NodeId): boolean {
+    const key = this.junctionKeys.get(node)
+    const anchor = key === undefined ? (this.signalMap.has(node) ? node : undefined) : this.signalAnchor(key)
+    return anchor !== undefined && this.signalMap.delete(anchor)
+  }
+
+  /** The signal on the junction containing `node`, if any. */
+  signalAt(node: NodeId): SignalView | undefined {
+    this.refreshJunctions()
+    const key = this.junctionKeys.get(node)
+    const anchor = key === undefined ? undefined : this.signalAnchor(key)
+    return anchor === undefined ? undefined : this.signalView(anchor)
+  }
+
+  /**
+   * All active signals. A signal whose junction stopped being one (the
+   * graph changed) is kept but inactive until it is a junction again.
+   */
+  signals(): readonly SignalView[] {
+    this.refreshJunctions()
+    const views: SignalView[] = []
+    const seen = new Set<NodeId>()
+    for (const anchor of [...this.signalMap.keys()].sort((a, b) => a - b)) {
+      const key = this.junctionKeys.get(anchor)
+      if (key === undefined || seen.has(key)) continue
+      seen.add(key)
+      const view = this.signalView(anchor)
+      if (view) views.push(view)
+    }
+    return views
+  }
+
+  /** What `vehicle` will do where its current road ends (for turn indicators). */
+  intentOf(vehicle: Vehicle): VehicleIntent {
+    this.refreshJunctions()
+    const step = vehicle.steps[vehicle.stepIndex]!
+    const edge = this.graph.getEdge(step.edge)
+    const distance = Math.max(0, (edge?.length ?? 0) - vehicle.progress)
+    const junction = this.junctionKeys.has(step.to)
+    const next = vehicle.steps[vehicle.stepIndex + 1]
+    if (!next) return { turn: 'exit', distance, junction }
+    const diff = normalizeAngle(this.headingOf(next) - this.headingOf(step))
+    const turn = Math.abs(diff) < Math.PI / 6 ? 'straight' : diff > 0 ? 'right' : 'left'
+    return { turn, distance, junction }
+  }
+
+  /**
+   * Whether `v`, driving from where it is through box `key` until it would
+   * release the box, would touch another vehicle stranded in that box.
+   * Footprints are each class's rectangle in its lane, grown by the safety
+   * gap; the path is sampled every 0.05 tiles. Only used while a box has
+   * stranded vehicles, which is rare.
+   */
+  /**
+   * 0: stranded on a road inside a junction box; 1: stranded past a stop
+   * line a new road moved back; 2: not stranded (before its stop line, or
+   * not heading into a box).
+   */
+  private strandTier(v: MutableVehicle): number {
+    const step = v.steps[v.stepIndex]!
+    if (this.junctionKeys.get(step.to) === undefined) return 2
+    if (this.internalEdges.has(step.edge)) return 0
+    const edge = this.graph.getEdge(step.edge)!
+    return v.progress > edge.length - this.stopDistanceAt(step.edge, step.to) + 1e-6 ? 1 : 2
+  }
+
+  private sweepHitsStranded(v: MutableVehicle, key: NodeId, tier: (o: MutableVehicle) => number = (o) => this.strandTier(o)): boolean {
+    const others: Corner[][] = []
+    for (const o of this.fleet.values()) {
+      if (o === v || o.holding !== undefined || this.junctionKeys.get(o.steps[o.stepIndex]!.to) !== key || tier(o) >= 2) continue
+      others.push(this.footprintAt(o, o.stepIndex, o.progress))
+    }
+    if (others.length === 0) return false
+    let i = v.stepIndex
+    let progress = v.progress
+    for (let guard = 0; guard < 2000; guard++) {
+      const step = v.steps[i]!
+      const length = this.graph.getEdge(step.edge)!.length
+      const inBox = this.internalEdges.has(step.edge) || this.junctionKeys.get(step.to) === key
+      // Past the box: stop once the vehicle would release it.
+      const leaving = this.junctionKeys.get(step.from) === key && !inBox
+      if (leaving && progress >= this.stopDistanceAt(step.edge, step.from) + VEHICLE_PROFILES[v.kind].length / 2) return false
+      if (!inBox && !leaving) return false
+      const mine = this.footprintAt(v, i, progress)
+      if (others.some((o) => rectanglesOverlap(mine, o))) return true
+      progress += 0.05
+      if (progress > length) {
+        if (i + 1 >= v.steps.length) return false
+        progress -= length
+        i++
+      }
+    }
+    return false
+  }
+
+  private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
+    const { position: p, heading: h } = this.lanePositionOf({ ...v, stepIndex, progress })
+    const profile = VEHICLE_PROFILES[v.kind]
+    const L = profile.length / 2 + this.geometry.safetyGap / 2
+    const W = profile.width / 2 + this.geometry.safetyGap / 2
+    const c = Math.cos(h)
+    const sn = Math.sin(h)
+    return [
+      [L, W],
+      [-L, W],
+      [-L, -W],
+      [L, -W],
+    ].map(([a, b]) => [p.x + a! * c - b! * sn, p.y + a! * sn + b! * c] as const)
+  }
+
+  /** Lowest-anchored signal on box `key`. */
+  private signalAnchor(key: NodeId): NodeId | undefined {
+    let best: NodeId | undefined
+    for (const anchor of this.signalMap.keys()) {
+      if (this.junctionKeys.get(anchor) === key && (best === undefined || anchor < best)) best = anchor
+    }
+    return best
+  }
+
+  private signalView(anchor: NodeId): SignalView | undefined {
+    const signal = this.signalMap.get(anchor)
+    const key = this.junctionKeys.get(anchor)
+    const junction = key === undefined ? undefined : this.junctionInfo.get(key)
+    if (!signal || !junction || !this.isSignalJunction(junction)) return undefined
+    const phases = defaultPhases(junction.approaches)
+    const state = signalPhaseAt(phases.length, signal.greenSec, this.time - signal.startedAt, SIGNAL_CLEARANCE_SEC)
+    return {
+      node: anchor,
+      junction,
+      greenSec: signal.greenSec,
+      clearanceSec: SIGNAL_CLEARANCE_SEC,
+      phases,
+      phase: state.phase,
+      clearance: state.clearance,
+      remaining: state.remaining,
+      lights: junction.approaches.map((_, i) => lightFor(phases, i, state)),
+    }
+  }
+
+  /** Light shown to a vehicle driving `step` toward a signalled box, if any. */
+  private lightAt(step: RouteStep): SignalLight | undefined {
+    if (this.signalMap.size === 0) return undefined
+    const key = this.junctionKeys.get(step.to)
+    const anchor = key === undefined ? undefined : this.signalAnchor(key)
+    if (anchor === undefined) return undefined
+    const view = this.signalView(anchor)
+    if (!view) return undefined
+    const index = view.junction.approaches.findIndex((a: JunctionLane) => a.edge === step.edge && a.node === step.to)
+    return index < 0 ? undefined : view.lights[index]
+  }
+
+  private headingOf(step: RouteStep): number {
+    const d = this.direction(step)
+    return Math.atan2(d.y, d.x)
+  }
+
   /** Advances the simulation by one fixed step of `dt` seconds. */
   step(dt: number): StepReport {
     if (!(dt > 0)) throw new RangeError('dt must be positive')
@@ -538,16 +786,22 @@ export class TrafficSim {
       return 'exited'
     }
 
-    // Re-plan at this junction if the graph changed since the route was made.
-    if (v.routeVersion !== this.graph.version && v.failedVersion !== this.graph.version) {
-      const result = findRoute(this.graph, node, v.destination)
-      if (result.ok && result.route.steps.length > 0) {
-        v.steps = [...v.steps.slice(0, v.stepIndex + 1), ...result.route.steps]
-        v.routeVersion = this.graph.version
-      } else if (!this.remainingValid(v)) {
-        v.failedVersion = this.graph.version
-      } else {
-        v.routeVersion = this.graph.version
+    // A box holder must not sweep a vehicle a new road stranded in its box
+    // (re-planning onto that road can send it there). Prefer the route it
+    // claimed the box for; if that is not clear either, give the box up: it
+    // is then stranded itself, and the stranded vehicles' sweep checks
+    // decide who moves first.
+    const claimed = v.steps
+    this.replanIfStale(v)
+    if (v.holding !== undefined && this.sweepHitsStranded(v, v.holding)) {
+      const replanned = v.steps
+      v.steps = claimed
+      if (replanned === claimed || !this.remainingValid(v) || this.sweepHitsStranded(v, v.holding)) {
+        v.steps = replanned
+        if (this.junctionHolder.get(v.holding) === v.id) this.junctionHolder.delete(v.holding)
+        v.holding = undefined
+        v.state = 'waiting'
+        return 'held'
       }
     }
     if (!this.remainingValid(v)) {
@@ -573,6 +827,25 @@ export class TrafficSim {
     v.state = 'moving'
     this.laneFor(next).push(v)
     return 'moved'
+  }
+
+  /**
+   * Re-plans from the end of the current road if the graph changed since the
+   * route was made. Called at the junction, and before claiming a junction
+   * box so the box is claimed for the route actually driven.
+   */
+  private replanIfStale(v: MutableVehicle): void {
+    if (v.routeVersion === this.graph.version || v.failedVersion === this.graph.version) return
+    const node = v.steps[v.stepIndex]!.to
+    const result = findRoute(this.graph, node, v.destination)
+    if (result.ok && result.route.steps.length > 0) {
+      v.steps = [...v.steps.slice(0, v.stepIndex + 1), ...result.route.steps]
+      v.routeVersion = this.graph.version
+    } else if (!this.remainingValid(v)) {
+      v.failedVersion = this.graph.version
+    } else {
+      v.routeVersion = this.graph.version
+    }
   }
 
   private remainingValid(v: MutableVehicle): boolean {
@@ -687,6 +960,11 @@ export class TrafficSim {
     }
     this.junctionKeys = new Map(members.map((n) => [n, find(n)]))
     this.internalEdges = internal
+    const boxes = new Map<NodeId, NodeId[]>()
+    for (const [n, key] of this.junctionKeys) boxes.set(key, [...(boxes.get(key) ?? []), n])
+    this.junctionInfo = new Map(
+      [...boxes].map(([key, nodes]) => [key, describeJunction(this.graph, key, nodes, internal, nodes.some((n) => portals.has(n)))]),
+    )
     // Re-key held boxes and timers for the new grouping.
     const holders = [...this.junctionHolder.values()]
     this.junctionHolder.clear()
@@ -820,6 +1098,12 @@ export class TrafficSim {
       const approach = (v.speed * v.speed) / (2 * decel) + v.speed * dt
       if (this.internalEdges.has(step.edge) || v.progress >= edge.length - this.stopDistanceAt(step.edge, step.to) - approach - 1e-6) candidates.push(v)
     }
+    // Right-of-way (#32): remember when each vehicle started waiting for its box.
+    for (const v of candidates) {
+      const key = this.junctionKeys.get(v.steps[v.stepIndex]!.to)!
+      const arrival = this.arrivals.get(v.id)
+      if (!arrival || arrival.key !== key) this.arrivals.set(v.id, { key, at: this.time })
+    }
     // Vehicles caught inside a box (on an internal edge, or past a stop line
     // that a new road just moved back) go first so they can clear it; then
     // oldest first.
@@ -829,16 +1113,49 @@ export class TrafficSim {
       const edge = this.graph.getEdge(step.edge)!
       return v.progress > edge.length - this.stopDistanceAt(step.edge, step.to) + 1e-6 ? 0 : 1
     }
-    candidates.sort((a, b) => inside(a) - inside(b) || a.id - b.id)
-    for (const v of candidates) {
-      const key = this.junctionKeys.get(v.steps[v.stepIndex]!.to)!
+    // Vehicles caught inside go first; the rest follow uncontrolled
+    // right-of-way: first come, first served, then yield to the right.
+    const caught = candidates.filter((v) => inside(v) === 0).sort((a, b) => a.id - b.id)
+    const waiting = orderByRightOfWay(
+      candidates
+        .filter((v) => inside(v) !== 0)
+        .map((v) => ({ v, id: v.id, arrivedAt: this.arrivals.get(v.id)!.at, heading: this.headingOf(v.steps[v.stepIndex]!) })),
+    ).map((c) => c.v)
+    // A box with vehicles stranded in it (a new road put the box around
+    // them) is occupied: until they have cleared it, only they may claim it,
+    // so nobody drives through them. Vehicles on a road inside the box come
+    // first, then those merely past a stop line the new road moved back
+    // (they have not entered the junction itself), then everyone else.
+    const tier = (other: MutableVehicle) => this.strandTier(other)
+    const strandedTier = new Map<NodeId, number>()
+    for (const other of this.fleet.values()) {
+      if (other.holding !== undefined) continue
+      const key = this.junctionKeys.get(other.steps[other.stepIndex]!.to)
+      if (key === undefined) continue
+      const t = tier(other)
+      if (t < 2) strandedTier.set(key, Math.min(t, strandedTier.get(key) ?? 2))
+    }
+    for (const v of [...caught, ...waiting]) {
+      const step = v.steps[v.stepIndex]!
+      const key = this.junctionKeys.get(step.to)!
       if (this.junctionHolder.has(key)) continue
+      if (tier(v) > (strandedTier.get(key) ?? 2)) continue
+      // Claim the box for the route actually driven through it.
+      if (v.stepIndex + 1 < v.steps.length) this.replanIfStale(v)
+      // Stranded vehicles may sit where another's path through the box runs
+      // (e.g. in the wedge of a sharp join): only claim the box if this
+      // vehicle's sweep through it clears every other stranded vehicle.
+      if (strandedTier.has(key) && this.sweepHitsStranded(v, key, tier)) continue
       if (this.time < (this.junctionFreeAt.get(key) ?? 0) - 1e-9) continue
+      // Signals (#32): only a green approach may enter (vehicles already
+      // inside the box are never held by a light).
+      if (inside(v) !== 0 && this.lightAt(v.steps[v.stepIndex]!) !== undefined && this.lightAt(v.steps[v.stepIndex]!) !== 'green') continue
       const exiting = v.stepIndex + 1 >= v.steps.length
       if (exiting) {
         // Leaving the map through this tunnel: nothing to make room for.
         this.junctionHolder.set(key, v.id)
         v.holding = key
+        this.arrivals.delete(v.id)
         if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
         continue
       }
@@ -852,6 +1169,7 @@ export class TrafficSim {
       if (this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) < clear - 1e-9) continue
       this.junctionHolder.set(key, v.id)
       v.holding = key
+      this.arrivals.delete(v.id)
       if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
     }
   }
@@ -961,6 +1279,7 @@ export class TrafficSim {
     lane.splice(lane.indexOf(v), 1)
     if (lane.length === 0) this.lanes.delete(laneKey(step))
     this.fleet.delete(v.id)
+    this.arrivals.delete(v.id)
     if (v.holding !== undefined && this.junctionHolder.get(v.holding) === v.id) this.junctionHolder.delete(v.holding)
   }
 
@@ -1005,4 +1324,31 @@ function normalizeVehicleMix(mix: Partial<VehicleMix> = {}): VehicleMix {
   const total = values.car + values.van + values.truck
   if (!(total > 0)) throw new RangeError('vehicle mix must contain a positive weight')
   return Object.freeze({ car: values.car / total, van: values.van / total, truck: values.truck / total })
+}
+
+type Corner = readonly [number, number]
+
+/** Separating-axis test for two convex quadrilaterals. */
+function rectanglesOverlap(A: readonly Corner[], B: readonly Corner[]): boolean {
+  for (const P of [A, B]) {
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = P[i]!
+      const [x2, y2] = P[(i + 1) % 4]!
+      const nx = y2 - y1
+      const ny = x1 - x2
+      let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity
+      for (const [x, y] of A) {
+        const d = x * nx + y * ny
+        minA = Math.min(minA, d)
+        maxA = Math.max(maxA, d)
+      }
+      for (const [x, y] of B) {
+        const d = x * nx + y * ny
+        minB = Math.min(minB, d)
+        maxB = Math.max(maxB, d)
+      }
+      if (maxA <= minB || maxB <= minA) return false
+    }
+  }
+  return true
 }

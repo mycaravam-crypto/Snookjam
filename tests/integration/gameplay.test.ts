@@ -4,9 +4,9 @@
  * together under fixed seeds and fixed steps (no wall-clock timing).
  *
  * Scenario: seed 10, level 3. Without player roads, the level is lost before
- * the 180 s target (at 146 s). One road from (38.5, 7.5) to (32.5, 8.5),
+ * the 180 s target (at 170 s). One road from (38.5, 7.5) to (32.5, 8.5),
  * built 12 s into the level, relieves the bottleneck and the level is
- * completed (congestion peaks around 9 %). This scenario was found by trying
+ * completed (congestion peaks around 8 %). This scenario was found by trying
  * every valid single straight road between road tiles 3-10 tiles apart; if
  * world generation, traffic rules or balance change, re-run that search and
  * update it. (Seed 77 was used until two-lane junction rules, #22, and seed 9
