@@ -2,12 +2,14 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { SessionSnapshot } from '@game/index'
 import { formatTime } from '../format'
+import { objectiveGoal, objectiveValue, STATUS_ICONS } from '../objectives'
 import ConfettiBurst from './ConfettiBurst.vue'
 
 const props = defineProps<{ snapshot: SessionSnapshot }>()
 defineEmits<{ resume: []; restart: []; nextLevel: []; newMap: []; quit: [] }>()
 
 const visible = computed(() => ['paused', 'levelComplete', 'gameOver'].includes(props.snapshot.state))
+const scored = computed(() => props.snapshot.mode === 'objectives')
 const card = ref<HTMLElement | null>(null)
 
 // Move focus into the dialog when it opens so keyboard users can act on it.
@@ -45,6 +47,12 @@ watch(
           You kept traffic moving for {{ formatTime(snapshot.levelTime) }}.
           {{ snapshot.vehiclesExited }} cars got through so far.
         </p>
+        <ul v-if="snapshot.objectives.length > 0" class="overlay-objectives" data-testid="overlay-objectives">
+          <li v-for="(o, i) in snapshot.objectives" :key="i" :data-status="o.status">
+            <span aria-hidden="true">{{ STATUS_ICONS[o.status] }}</span> {{ objectiveGoal(o.kind, o.target) }}: {{ objectiveValue(o) }}
+          </li>
+        </ul>
+        <p v-if="scored" data-testid="overlay-score">Level score {{ snapshot.levelScore }} · Total {{ snapshot.score }}</p>
         <p>The next level has a new map and heavier traffic.</p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-next" @click="$emit('nextLevel')">
@@ -56,11 +64,20 @@ watch(
 
       <template v-else>
         <div class="overlay-badge" aria-hidden="true">✕</div>
-        <h2 id="overlay-title">Gridlock!</h2>
-        <p>
+        <h2 id="overlay-title">{{ snapshot.endReason === 'objectives' ? 'Objectives missed' : 'Gridlock!' }}</h2>
+        <template v-if="snapshot.endReason === 'objectives'">
+          <p>Time ran out on level {{ snapshot.level }} before every goal was met.</p>
+          <ul class="overlay-objectives" data-testid="overlay-objectives">
+            <li v-for="(o, i) in snapshot.objectives" :key="i" :data-status="o.status">
+              <span aria-hidden="true">{{ STATUS_ICONS[o.status] }}</span> {{ objectiveGoal(o.kind, o.target) }}: {{ objectiveValue(o) }}
+            </li>
+          </ul>
+        </template>
+        <p v-else>
           Congestion hit 100% on level {{ snapshot.level }} after {{ formatTime(snapshot.levelTime) }}.
           You survived {{ formatTime(snapshot.totalTime) }} in total and {{ snapshot.vehiclesExited }} cars got through.
         </p>
+        <p v-if="scored" data-testid="overlay-score">Final score {{ snapshot.score }}</p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-restart" @click="$emit('restart')">Try again</button>
           <button type="button" data-testid="overlay-new-map" @click="$emit('newMap')">New map</button>

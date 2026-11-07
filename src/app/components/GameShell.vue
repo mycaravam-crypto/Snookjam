@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type Point } from '@game/index'
+import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type GameMode, type Point } from '@game/index'
 import { canBuild, createGameController, type Tool } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
 import GameHud from './GameHud.vue'
@@ -8,9 +8,10 @@ import GameOverlay from './GameOverlay.vue'
 import NetworkPanel from './NetworkPanel.vue'
 import WorldCanvas from './WorldCanvas.vue'
 
+const props = withDefaults(defineProps<{ mode?: GameMode }>(), { mode: 'classic' })
 const emit = defineEmits<{ quit: [] }>()
 
-const game = createGameController(initialSeed())
+const game = createGameController(initialSeed(), props.mode)
 const { snapshot, construction, session, tool, selectedSignal } = game
 const canvas = ref<InstanceType<typeof WorldCanvas> | null>(null)
 

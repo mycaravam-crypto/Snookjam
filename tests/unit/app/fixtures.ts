@@ -15,6 +15,11 @@ export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     pendingVehicles: 0,
     vehiclesExited: 40,
     network: EMPTY_NETWORK_STATS,
+    mode: 'classic',
+    objectives: [],
+    levelScore: 0,
+    score: 400,
+    endReason: undefined,
     ...overrides,
   }
 }
