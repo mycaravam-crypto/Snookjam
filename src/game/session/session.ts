@@ -7,7 +7,7 @@
  *                    │  └──pause──▶ paused
  *                    ├─ survived levelDuration ─▶ levelComplete ──nextLevel──▶ running (level + 1)
  *                    └─ congestion reached limit ─▶ gameOver
- *   restart: from any state ─▶ running at level 1 with a fresh world, sim and clock
+ *   restart: from any state ─▶ running at the current level with a fresh world, sim and clock
  *
  * Each level gets its own seeded world (level 1 uses the run seed, later
  * levels derive from it), a fresh traffic sim and zero congestion. Time only
@@ -399,18 +399,15 @@ export class GameSession {
     return true
   }
 
-  /** Starts a clean run at level 1 with the same seed. */
+  /**
+   * Retries the current level with its original seed and difficulty.
+   * Completed-level time, score, exits and shop rewards remain part of the run.
+   * Placed items return to inventory when loadLevel() resets the map.
+   */
   restart(): boolean {
-    this.levelNumber = 1
-    this.completedTime = 0
-    this.exitedInRun = 0
-    this.completedScore = 0
     this.endReason = undefined
-    this.coinsValue = this.economy.startingCoins
-    this.owned = { ...EMPTY_INVENTORY }
-    this.onMap = { ...EMPTY_INVENTORY }
     this.lastReward = undefined
-    this.loadLevel(1)
+    this.loadLevel(this.levelNumber)
     this.transition('running')
     return true
   }
