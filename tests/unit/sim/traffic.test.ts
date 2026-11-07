@@ -298,6 +298,39 @@ describe('routing changes', () => {
   })
 })
 
+describe('junction edge-split migration (#29)', () => {
+  it('keeps a moving vehicle in place and routable when its occupied edge becomes a junction', () => {
+    const graph = RoadGraph.fromLayout({
+      nodes: [
+        { id: 0, x: 0, y: 0 },
+        { id: 1, x: 8, y: 0 },
+        { id: 2, x: 4, y: -4 },
+        { id: 3, x: 4, y: 4 },
+      ],
+      segments: [{ from: 0, to: 1 }],
+    })
+    const traffic = sim(graph, { portals: [0, 1], startingVehicles: 1 })
+    run(traffic, 20)
+    const vehicle = traffic.vehicles()[0]!
+    const before = traffic.positionOf(vehicle).position
+
+    const result = graph.connect({ kind: 'node', node: 2 }, { kind: 'node', node: 3 })
+    expect(result.splits).toHaveLength(1)
+    for (const split of result.splits) traffic.applySplit(split)
+
+    const migrated = traffic.getVehicle(vehicle.id)!
+    const after = traffic.positionOf(migrated).position
+    expect(after.x).toBeCloseTo(before.x)
+    expect(after.y).toBeCloseTo(before.y)
+    expect(graph.getEdge(migrated.steps[migrated.stepIndex]!.edge)).toBeDefined()
+    expect(traffic.laneOccupants(migrated.steps[migrated.stepIndex]!.edge, migrated.steps[migrated.stepIndex]!.from)).toContain(migrated)
+
+    run(traffic, 200)
+    expect(traffic.getVehicle(vehicle.id)).toBeUndefined()
+    expect(traffic.stats().totalExited).toBe(1)
+  })
+})
+
 describe('determinism and timing', () => {
   it('produces identical outcomes for the same seed and step sequence', () => {
     const make = (seed: number) => {

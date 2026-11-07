@@ -293,7 +293,22 @@ export class RoadGraph {
     const start = this.ensureNodeAt(from)
     const end = this.ensureNodeAt(remapLocation(this, to, start.split))
     const points = [this.getNode(start.node)!.position, ...via, this.getNode(end.node)!.position]
-    const waypointNodes = [start.node, ...via.map((p) => this.addNode(p).id), end.node]
+    const splits: EdgeSplit[] = [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined)
+    // A freehand bend can land exactly on an existing road. Make that bend
+    // the shared graph node instead of leaving two geometries crossing at a
+    // point that the segment-intersection test would otherwise treat as an
+    // endpoint (and therefore skip).
+    const waypointNodes = [
+      start.node,
+      ...via.map((p) => {
+        const nearest = this.nearestLocation(p, 1e-6, 1e-6)
+        if (!nearest) return this.addNode(p).id
+        const ensured = this.ensureNodeAt(nearest.location)
+        if (ensured.split) splits.push(ensured.split)
+        return ensured.node
+      }),
+      end.node,
+    ]
     const events: { segment: number; t: number; edge: EdgeId; u: number; node?: NodeId }[] = []
 
     for (let segment = 0; segment < points.length - 1; segment++) {
@@ -307,7 +322,6 @@ export class RoadGraph {
       }
     }
 
-    const splits: EdgeSplit[] = [start.split, end.split].filter((s): s is EdgeSplit => s !== undefined)
     const byEdge = new Map<EdgeId, typeof events>()
     for (const event of events) {
       if (event.node !== undefined) continue
@@ -390,7 +404,18 @@ export class RoadGraph {
   private connectToPointMutable(from: RoadLocation, point: Point, options: EdgeOptions, via: readonly Point[]): ConnectResult {
     const start = this.ensureNodeAt(from)
     const points = [this.getNode(start.node)!.position, ...via, point]
-    const waypointNodes = [start.node, ...via.map((p) => this.addNode(p).id), this.addNode(point).id]
+    const splits: EdgeSplit[] = start.split ? [start.split] : []
+    const waypointNodes = [
+      start.node,
+      ...via.map((p) => {
+        const nearest = this.nearestLocation(p, 1e-6, 1e-6)
+        if (!nearest) return this.addNode(p).id
+        const ensured = this.ensureNodeAt(nearest.location)
+        if (ensured.split) splits.push(ensured.split)
+        return ensured.node
+      }),
+      this.addNode(point).id,
+    ]
     const events: { segment: number; t: number; edge: EdgeId; u: number; node?: NodeId }[] = []
     for (let segment = 0; segment < points.length - 1; segment++) {
       const a = points[segment]!, b = points[segment + 1]!
@@ -402,7 +427,6 @@ export class RoadGraph {
         events.push({ segment, t: hit.t, edge: edge.id, u: hit.u, ...(node === undefined ? {} : { node }) })
       }
     }
-    const splits: EdgeSplit[] = start.split ? [start.split] : []
     const byEdge = new Map<EdgeId, typeof events>()
     for (const event of events) {
       if (event.node !== undefined) continue
