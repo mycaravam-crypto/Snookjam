@@ -61,8 +61,8 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   levelDurationSec: DEFAULT_CONFIG.levelDurationSec,
   // Dense-traffic follow-up (#53): roughly double the former spawn throughput
   // and starting fleet while preserving a forgiving first level.
-  baseSpawnIntervalSec: 1.8,
-  minSpawnIntervalSec: 0.5,
+  baseSpawnIntervalSec: 2.2,
+  minSpawnIntervalSec: 0.8,
   levelSpawnFactor: 0.75,
   inLevelRampFactor: 0.6,
   startingVehicles: 16,
