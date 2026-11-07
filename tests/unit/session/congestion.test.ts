@@ -5,9 +5,12 @@ import {
   congestionTerms,
   createBalance,
   levelStartInterval,
+  maxVehiclesFor,
   nextCongestion,
   spawnIntervalAt,
   startingVehiclesFor,
+  targetVehiclesFor,
+  vehicleMixFor,
   type CongestionInput,
 } from '../../../src/game'
 
@@ -92,6 +95,21 @@ describe('balance and progression', () => {
     expect(startingVehiclesFor(b, 1)).toBe(b.startingVehicles)
     expect(startingVehiclesFor(b, 3)).toBe(b.startingVehicles + 2 * b.startingVehiclesPerLevel)
     expect(startingVehiclesFor(b, 1000)).toBe(b.maxVehicles)
+  })
+
+  it('scales fleet targets and heavier vehicles predictably across levels', () => {
+    const targets = Array.from({ length: 8 }, (_, i) => targetVehiclesFor(i + 1))
+    expect(targets).toEqual([80, 120, 160, 220, 300, 400, 400, 400])
+    expect(targets.every((target, i) => i === 0 || target >= targets[i - 1]!)).toBe(true)
+    expect(maxVehiclesFor(b, 6)).toBe(400)
+    expect(maxVehiclesFor(b, 20)).toBe(400)
+
+    const early = vehicleMixFor(b, 1)
+    const later = vehicleMixFor(b, 10)
+    expect(later.van).toBeGreaterThan(early.van)
+    expect(later.truck).toBeGreaterThan(early.truck)
+    expect(later.car).toBeLessThan(early.car)
+    expect(later.car + later.van + later.truck).toBeCloseTo(1)
   })
 
   it('validates overrides', () => {
