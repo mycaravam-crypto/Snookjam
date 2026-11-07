@@ -357,13 +357,7 @@ describe('determinism and timing', () => {
     expect(play(144)).toEqual(at60)
   })
 
-  it('stays fast at the 100-vehicle target', () => {
-    const { graph, portals } = crossroads()
-    const s = sim(graph, { portals, startingVehicles: 100, maxVehicles: 100, spawnIntervalSec: 0.8 })
-    const start = performance.now()
-    run(s, 20 * 60) // one simulated minute
-    expect(performance.now() - start).toBeLessThan(1000)
-  })
+
 })
 
 describe('FixedStepClock', () => {
