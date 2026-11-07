@@ -303,7 +303,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="tool === 'remove' ? `Map of seed ${world.seed}. Tap a road you built to select it for removal.` : tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : tool === 'roundabout' ? `Map of seed ${world.seed}. Tap a junction to build or edit a roundabout.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
+    :aria-label="tool === 'remove' ? `Map of seed ${world.seed}. Tap a road you built to select it for removal.` : tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : tool === 'roundabout' ? `Map of seed ${world.seed}. Tap a junction to build or edit a roundabout.` : `Map of seed ${world.seed}. Drag from any road. Connect to another road or release on open ground to create a dead end.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
