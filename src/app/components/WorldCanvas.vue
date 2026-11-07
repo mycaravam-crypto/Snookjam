@@ -206,7 +206,11 @@ function onPointerMove(e: PointerEvent): void {
     e.preventDefault()
     // Coalesced events carry the full trajectory between frames (#18).
     const trace = (e.getCoalescedEvents?.() ?? []).map(toWorld).filter((p): p is Point => p !== undefined)
-    c.pointerMove(trace.length > 0 ? trace : point)
+    // Some browsers omit the dispatched event from getCoalescedEvents(). Always
+    // include its actual position so the preview cannot lag behind the pointer.
+    const last = trace[trace.length - 1]
+    if (!last || last.x !== point.x || last.y !== point.y) trace.push(point)
+    c.pointerMove(trace)
   } else if (e.pointerType === 'mouse' && canvas.value && props.interactive) {
     // Hint that a drag can start here.
     canvas.value.style.cursor = snapToRoad(c.graph, point, c.options) ? 'crosshair' : 'default'
