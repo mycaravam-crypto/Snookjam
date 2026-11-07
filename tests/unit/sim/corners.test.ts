@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { RoadGraph } from '../../../src/game/roads'
-import { TrafficSim } from '../../../src/game/sim'
+import { TrafficSim, VEHICLE_PROFILES } from '../../../src/game/sim'
 import { collisions } from './footprint'
 
 const DT = 1 / 20
@@ -23,6 +23,31 @@ function sharpBend(): RoadGraph {
 }
 
 describe('continuous corner driving', () => {
+  it('accelerates and brakes progressively through a bend', () => {
+    const graph = sharpBend()
+    const sim = new TrafficSim(graph, {
+      portals: [0, 2],
+      random: { next: () => 0.37 },
+      startingVehicles: 1,
+      maxVehicles: 1,
+      spawnIntervalSec: 1000,
+    })
+    const speeds: number[] = []
+    for (let i = 0; i < 20 * 12 && sim.vehicles().length > 0; i++) {
+      sim.step(DT)
+      const vehicle = sim.vehicles()[0]
+      if (vehicle) speeds.push(vehicle.speed)
+    }
+
+    const profile = VEHICLE_PROFILES.car
+    for (let i = 1; i < speeds.length; i++) {
+      expect(speeds[i]! - speeds[i - 1]!).toBeLessThanOrEqual(profile.accel * DT + 1e-9)
+      expect(speeds[i - 1]! - speeds[i]!).toBeLessThanOrEqual(profile.decel * DT + 1e-9)
+    }
+    expect(Math.min(...speeds)).toBeLessThan(1.95)
+    expect(speeds.at(-1)).toBeCloseTo(2, 1)
+  })
+
   it('slows through a sharp bend without reserving or stopping at a junction', () => {
     const graph = sharpBend()
     const sim = new TrafficSim(graph, {
