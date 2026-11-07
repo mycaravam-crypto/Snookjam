@@ -3,7 +3,7 @@ import { ROAD_GEOMETRY, VEHICLE_PROFILES, type TrafficSim, type Vehicle } from '
 type Corner = readonly [number, number]
 
 /** Oriented rectangle of a vehicle in its lane, in world units. */
-export function footprint(sim: TrafficSim, v: Vehicle, g = ROAD_GEOMETRY): Corner[] {
+export function footprint(sim: TrafficSim, v: Vehicle): Corner[] {
   const { position: p, heading: h } = sim.lanePositionOf(v)
   const c = Math.cos(h)
   const s = Math.sin(h)
@@ -36,8 +36,8 @@ export function overlaps(A: Corner[], B: Corner[], eps = 1e-6): boolean {
 }
 
 /** Pairs of vehicles whose footprints overlap. */
-export function collisions(sim: TrafficSim, g = ROAD_GEOMETRY): [Vehicle, Vehicle][] {
-  const vs = sim.vehicles().map((v) => ({ v, box: footprint(sim, v, g) }))
+export function collisions(sim: TrafficSim): [Vehicle, Vehicle][] {
+  const vs = sim.vehicles().map((v) => ({ v, box: footprint(sim, v) }))
   const out: [Vehicle, Vehicle][] = []
   for (let i = 0; i < vs.length; i++) {
     for (let j = i + 1; j < vs.length; j++) {
