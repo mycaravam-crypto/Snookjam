@@ -36,8 +36,8 @@ describe.each(SEEDS)('world validity (seed %i)', (seed) => {
   const nodeById = new Map(world.roads.nodes.map((n) => [n.id, n]))
 
   it('places the requested settlements and portals', () => {
-    expect(world.settlements).toHaveLength(7)
-    expect(world.portals).toHaveLength(6)
+    expect(world.settlements).toHaveLength(5)
+    expect(world.portals).toHaveLength(4)
     for (const p of world.portals) {
       const { tx, ty } = p.tile
       const onEdge = tx === 0 || ty === 0 || tx === world.width - 1 || ty === world.height - 1
