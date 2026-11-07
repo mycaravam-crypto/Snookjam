@@ -745,10 +745,8 @@ test.describe('road editing (#33)', () => {
 })
 
 /**
- * With two-lane spacing and junction boxes (#22), 40 x 30 maps hold roughly
- * 40-90 vehicles at once depending on their road network. Seed 36 has room
- * for about 90; the 100-vehicle simulation cost is covered on a larger map in
- * tests/integration/gameplay.test.ts.
+ * The denser generated network is tuned for a 100-vehicle early-game fleet.
+ * Seed 36 is used here for a stable, representative browser rendering load.
  */
 const PERF_URL = '?seed=36&test'
 
@@ -757,8 +755,8 @@ test('stays responsive with a high-density active fleet', async ({ page }) => {
   // Fill the map, holding congestion at 0 so the run keeps going.
   await page.evaluate(() => {
     const s = (window as any).__snookjam.session.value
-    // Performance coverage needs the level-3 100-vehicle target. Level 1
-    // intentionally caps traffic at 40, so queueing 100 here cannot test it.
+    // Advance to level 3 to exercise the same progression path as a busy run;
+    // queue a controlled 100-car fleet for a repeatable rendering benchmark.
     for (let level = 1; level < 3; level++) {
       while (s.state === 'running') {
         s.tick()
