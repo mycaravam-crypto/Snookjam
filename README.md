@@ -47,6 +47,7 @@ src/
     sim/         Traffic simulation and fixed-step clock
     session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
+    diagnostics/ Read-only traffic statistics, road heat and blocked junctions
     build/       Road construction: freehand path geometry, validation and the
                  drag-to-build controller
     render/      Canvas 2D drawing through an injected context
@@ -70,6 +71,14 @@ or the app layer.
   the map at least 15% larger, the map is drawn rotated (world north points
   right). This is display-only: the map, seeds and rules are unchanged, and
   pointer input is converted back to world coordinates.
+- **Traffic diagnostics (#34):** **Heatmap** (or <kbd>H</kbd>) tints roads
+  by how full their queues are, from pale yellow to red. Persistent bottlenecks
+  get a dashed white border and blocked junctions a red ring with a ×.
+  **Stats** (or <kbd>I</kbd>) opens a panel with completed journeys,
+  throughput, average trip and waiting time, vehicles on the map and waiting
+  now, and counts of bottlenecks and blocked junctions. Both are display-only:
+  they never pause or change the simulation. Metric definitions are in
+  `src/game/diagnostics/network.ts`.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
 - **Build a road:** press on an existing road, draw the road along any path

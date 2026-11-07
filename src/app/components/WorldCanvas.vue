@@ -5,6 +5,7 @@ import {
   FONT_FAMILY,
   fitViewport,
   renderConstructionPreview,
+  renderHeatmap,
   renderSignals,
   renderVehicles,
   renderWorld,
@@ -13,6 +14,7 @@ import {
   type ConstructionController,
   type ConstructionFeedback,
   type ConstructionOutcome,
+  type NetworkMonitor,
   type NodeId,
   type Point,
   type TrafficSim,
@@ -28,12 +30,24 @@ const props = withDefaults(
     traffic?: TrafficSim
     /** Whether pointer input may build roads. */
     interactive?: boolean
+    /** Traffic diagnostics for the congestion overlay (#34). */
+    diagnostics?: NetworkMonitor
+    /** Draw the congestion heatmap overlay. */
+    heatmap?: boolean
     /** 'road' drags build roads; 'signal' taps place or select traffic lights (#32). */
     tool?: 'road' | 'signal'
     /** Node of the selected traffic lights, if any. */
     selectedSignal?: NodeId
   }>(),
-  { construction: undefined, traffic: undefined, interactive: true, tool: 'road', selectedSignal: undefined },
+  {
+    construction: undefined,
+    traffic: undefined,
+    interactive: true,
+    diagnostics: undefined,
+    heatmap: false,
+    tool: 'road',
+    selectedSignal: undefined,
+  },
 )
 const emit = defineEmits<{ outcome: [ConstructionOutcome]; tap: [Point] }>()
 
@@ -112,6 +126,8 @@ function draw(): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.drawImage(background, 0, 0)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // Display only: the overlay reads the monitor and never touches the sim.
+  if (props.heatmap && props.diagnostics) renderHeatmap(ctx, props.diagnostics.graph, props.diagnostics, viewport)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
   if (props.traffic) {
     renderVehicles(ctx, props.traffic, viewport)
@@ -231,6 +247,7 @@ onBeforeUnmount(() => {
   clearTimeout(feedbackTimer)
   if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
 })
+watch(() => props.heatmap, scheduleDraw)
 watch(
   () => props.interactive,
   (interactive) => {
