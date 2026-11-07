@@ -248,7 +248,7 @@ describe('routing changes', () => {
     expect(s.stats().totalExited).toBe(1)
   })
 
-  it('re-routes at the next junction to use a newly built shortcut', () => {
+  it('re-routes at the next road node to use a newly built shortcut', () => {
     // U-shaped road 0 → 1 → 2 → 3 → 4 → 5; a shortcut 1 — 4 is added later.
     const g = RoadGraph.fromLayout({
       nodes: [
