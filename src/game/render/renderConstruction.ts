@@ -3,7 +3,7 @@ import type { Point } from '../roads/graph'
 import { worldToScreen, type Viewport } from '../world/viewport'
 import type { RenderContext } from './renderWorld'
 import { COLORS } from './palette'
-import { strokeRoads } from './roadStyle'
+import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from './roadStyle'
 
 export type ConstructionContext = RenderContext & Pick<CanvasRenderingContext2D, 'globalAlpha'>
 
@@ -41,19 +41,25 @@ export function renderConstructionPreview(
   ctx.lineCap = 'round'
   if (feedback) {
     ctx.globalAlpha = 0.85
+    const feedbackPoints = roadPoints(feedback)
+    ctx.strokeStyle = COLORS.buildOutline
+    ctx.lineWidth = Math.max(2, s * ROAD_EDGE_WIDTH)
+    polyline(ctx, v, feedbackPoints)
     ctx.strokeStyle = feedback.kind === 'committed' ? COLORS.buildValid : COLORS.buildInvalid
-    ctx.lineWidth = Math.max(3, s * 0.75)
-    polyline(ctx, v, roadPoints(feedback))
+    ctx.lineWidth = Math.max(2, s * ROAD_SURFACE_WIDTH)
+    polyline(ctx, v, feedbackPoints)
     ctx.globalAlpha = 1
   }
   if (preview) {
     const valid = preview.check.ok
     const points = preview.path.length >= 2 ? preview.path : [preview.from, preview.to]
+    // Match the finished two-lane road footprint, rather than showing a
+    // narrow guide line that grows into a much wider road on release.
     ctx.strokeStyle = COLORS.buildOutline
-    ctx.lineWidth = Math.max(4, s * 0.6)
+    ctx.lineWidth = Math.max(2, s * ROAD_EDGE_WIDTH)
     polyline(ctx, v, points)
     ctx.strokeStyle = valid ? COLORS.buildValid : COLORS.buildInvalid
-    ctx.lineWidth = Math.max(2, s * 0.4)
+    ctx.lineWidth = Math.max(2, s * ROAD_SURFACE_WIDTH)
     if (!valid) ctx.setLineDash([s * 0.4, s * 0.3])
     polyline(ctx, v, points)
     ctx.setLineDash([])
