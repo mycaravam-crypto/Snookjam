@@ -251,8 +251,9 @@ randomness from a seeded source.
   with no route waits in the `stuck` state until the graph changes.
 - Spawns that cannot enter yet stay pending; a spawn with no route between
   portals is dropped and counted as `unroutable`.
-- Defaults: 8 starting vehicles, at most 100 active, one spawn every 4 s
-  (adjustable, never below 0.8 s).
+- Defaults: 16 starting vehicles, with an 80-car level-one target and a
+  400-car late-game ceiling. Spawning starts at 1.2 s and ramps down to
+  0.72 s in level one (never below 0.3 s).
 - Intersections (three or more roads meeting) let one vehicle through every
   `junctionClearSec` (1.8 s by default), so busy junctions become the
   bottlenecks that new roads relieve. Bends are not limited.
@@ -276,13 +277,14 @@ Congestion (0–100 %) changes every step by `rise − fall`:
 - No rise during the first `levelStartGraceSec` of a level. Reaching 100 %
   ends the run.
 
-Levels last 180 s. The spawn interval starts at 2.5 s, ramps down to 60 % of
-that within a level, starts 25 % lower each level, and never drops below
-0.8 s. Each level also adds 2 starting vehicles. All values are in
-`DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
-without player roads (seeds 1–10): levels 1–2 stay below about 8 %
-congestion, level 3 peaks at 5–25 % on the seeds it does not lose (2 of 10
-seeds lost), and level 4 is lost on every seed.
+Levels last 180 s. The spawn interval starts at 2.2 s, ramps down to 60 %
+of that within a level, starts 20 % lower each level, and never drops below
+0.8 s. Each level starts with 16 vehicles and adds 2 to that starting fleet.
+Active fleet targets rise from 80 on level 1 to 400 from level 6 onward.
+All values are in `DEFAULT_BALANCE` (src/game/session/balance.ts). The
+traffic-density tuning is deliberately separate from congestion: a large
+moving fleet does not raise congestion unless vehicles actually wait or
+block one another.
 
 ## Testing
 

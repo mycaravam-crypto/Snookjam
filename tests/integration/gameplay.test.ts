@@ -18,9 +18,9 @@ import { ConstructionController, GameSession, type SessionEvent } from '../../sr
 const SEED = 10
 const ROAD = { from: { x: 38.5, y: 7.5 }, to: { x: 32.5, y: 8.5 } }
 /**
- * Map for the performance check (independent of the scenario). With two-lane
- * spacing and junction boxes (#22) a 40 x 30 map holds about 80 vehicles at
- * once, so the 100-vehicle check uses a larger map.
+ * Map for the performance check (independent of the scenario). The larger
+ * map exercises the simulation at 100 active vehicles without changing the
+ * normal 40 × 30 player map.
  */
 const PERF_SEED = 77
 const PERF_WORLD = { width: 56, height: 42 }

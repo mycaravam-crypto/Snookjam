@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnection, ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
-import { targetVehiclesFor } from '../../../src/game/session/balance'
+import { maxVehiclesFor, targetVehiclesFor } from '../../../src/game/session/balance'
 
 const DT = 1 / 20
 
@@ -16,13 +16,25 @@ function ticks(s: GameSession, seconds: number): void {
 }
 
 describe('traffic density progression', () => {
-  it('sets a busy starting fleet and scales targets up to 400 vehicles', () => {
-    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(targetVehiclesFor)).toEqual([
-      40, 70, 100, 150, 200, 250, 280, 310, 340, 370, 400,
+  it('starts with meaningful traffic and scales targets up to 400 vehicles', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map(targetVehiclesFor)).toEqual([
+      80, 120, 160, 220, 300, 400, 400, 400,
     ])
     const s = new GameSession({ seed: 42 })
-    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 40, activeVehicles: 0, pendingVehicles: 8 })
-    expect(s.sim.maxVehicles).toBe(40)
+    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 80, activeVehicles: 0, pendingVehicles: 16 })
+    expect(s.sim.maxVehicles).toBe(80)
+    expect(maxVehiclesFor(s.balance, 6)).toBe(400)
+    expect(s.sim.spawnIntervalSec).toBeCloseTo(2.2)
+    expect(s.world.settlements).toHaveLength(5)
+    expect(s.world.portals).toHaveLength(4)
+  })
+
+  it('builds a visible active fleet quickly instead of trickling in a few cars', () => {
+    const s = new GameSession({ seed: 42 })
+    s.start()
+    ticks(s, 10)
+    expect(s.snapshot().activeVehicles).toBeGreaterThan(15)
+    expect(s.snapshot().activeVehicleTarget).toBe(80)
   })
 })
 

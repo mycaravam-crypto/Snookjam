@@ -59,14 +59,13 @@ export interface BalanceConfig {
 
 export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   levelDurationSec: DEFAULT_CONFIG.levelDurationSec,
-  // High-density tuning (#50): keep the initial learning curve, then
-  // replenish traffic more quickly toward a level-specific active fleet target.
-  // Targets grow from 40 vehicles on level 1 to 400 by level 11.
-  baseSpawnIntervalSec: 2.5,
-  minSpawnIntervalSec: DEFAULT_CONFIG.minSpawnIntervalSec,
-  levelSpawnFactor: 0.75,
+  // Dense-traffic follow-up (#53): roughly double the former spawn throughput
+  // and starting fleet while preserving a forgiving first level.
+  baseSpawnIntervalSec: 2.2,
+  minSpawnIntervalSec: 0.8,
+  levelSpawnFactor: 0.8,
   inLevelRampFactor: 0.6,
-  startingVehicles: DEFAULT_CONFIG.startingVehicles,
+  startingVehicles: 16,
   startingVehiclesPerLevel: 2,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   maxVehiclesPerLevel: 10,
@@ -134,12 +133,11 @@ export function vehicleMixFor(balance: BalanceConfig, level: number): VehicleMix
   return { car, van, truck }
 }
 
-/** Active traffic target by level. Later levels continue climbing to a 400-car ceiling. */
+/** Active traffic target by level. Later levels reach a 400-car safety ceiling. */
 export function targetVehiclesFor(level: number): number {
-  const targets = [40, 70, 100, 150, 200]
+  const targets = [80, 120, 160, 220, 300, 400]
   const normalizedLevel = Math.max(1, Math.floor(level))
-  if (normalizedLevel <= targets.length) return targets[normalizedLevel - 1]!
-  return Math.min(400, 250 + (normalizedLevel - 6) * 30)
+  return targets[Math.min(normalizedLevel - 1, targets.length - 1)]!
 }
 
 export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
