@@ -642,6 +642,19 @@ export class TrafficSim {
    * Vehicle footprints include the configured safety gap. Sampling every
    * 0.05 tiles keeps the check conservative without depending on render rate.
    */
+  /**
+   * 0: stranded on a road inside a junction box; 1: stranded past a stop
+   * line a new road moved back; 2: not stranded (before its stop line, or
+   * not heading into a box).
+   */
+  private strandTier(v: MutableVehicle): number {
+    const step = v.steps[v.stepIndex]!
+    if (this.junctionKeys.get(step.to) === undefined) return 2
+    if (this.internalEdges.has(step.edge)) return 0
+    const edge = this.graph.getEdge(step.edge)!
+    return v.progress > edge.length - this.stopDistanceAt(step.edge, step.to) + 1e-6 ? 1 : 2
+  }
+
   private sweepHitsStranded(v: MutableVehicle, key: NodeId): boolean {
     const others: Corner[][] = []
     for (const o of this.fleet.values()) {
@@ -1316,7 +1329,7 @@ export class TrafficSim {
       // Stranded vehicles may sit where another's path through the box runs
       // (e.g. in the wedge of a sharp join): only claim the box if this
       // vehicle's sweep through it clears every other stranded vehicle.
-      if (strandedTier.has(key) && this.sweepHitsStranded(v, key, tier)) continue
+      if (this.sweepHitsStranded(v, key)) continue
       if (this.time < (this.junctionFreeAt.get(key) ?? 0) - 1e-9) continue
       // Signals (#32): only a green approach may enter (vehicles already
       // inside the box are never held by a light).
