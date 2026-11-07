@@ -1,4 +1,4 @@
-import { ROAD_GEOMETRY, VEHICLE_PROFILES, type TrafficSim, type Vehicle } from '@game/index'
+import { VEHICLE_PROFILES, type TrafficSim, type Vehicle } from '@game/index'
 
 type Corner = readonly [number, number]
 
