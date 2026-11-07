@@ -1088,6 +1088,30 @@ kbd {
   white-space: nowrap;
 }
 
+.themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 34rem);
+  margin: 0 auto 14px;
+}
+.themes button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  min-height: 58px;
+  background: #ffffff12;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  box-shadow: 0 3px 0 #00000055;
+}
+.themes button span { color: var(--muted); font-size: 0.78rem; font-weight: 400; }
+.themes button[aria-pressed='true'] {
+  background: #ffcf3f24;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px #ffcf3f35, 0 3px 0 #00000055;
+}
 .modes {
   display: flex;
   flex-wrap: wrap;
