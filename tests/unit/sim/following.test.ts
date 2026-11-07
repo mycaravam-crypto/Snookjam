@@ -71,7 +71,12 @@ describe('nextSpeed (#31)', () => {
     expect(nextSpeed(1.9, 2, 100, 4, 6, DT)).toBe(2)
   })
 
-  it('brakes so it can stop within the room ahead', () => {
+  it('brakes smoothly toward a lower cruise speed', () => {
+    expect(nextSpeed(2, 1, 100, 4, 6, DT)).toBeCloseTo(2 - 6 * DT)
+    expect(nextSpeed(1.7, 1, 100, 4, 6, DT)).toBeCloseTo(1.4)
+  })
+
+  it('brakes harder only when the available stopping room requires it', () => {
     expect(nextSpeed(2, 2, 0.12, 4, 6, DT)).toBeCloseTo(Math.sqrt(2 * 6 * 0.12))
     expect(nextSpeed(2, 2, 0.01, 4, 6, DT)).toBeCloseTo(0.01 / DT)
     expect(nextSpeed(2, 2, 0, 4, 6, DT)).toBe(0)
