@@ -213,8 +213,8 @@ random seed is used and shown in the header. "New map" picks a new one.
   units to CSS pixels and is recomputed on resize without touching the world.
 - **Terrain.** Grass, field, forest, water and settlement tiles from seeded
   value noise. Water is impassable.
-- **Settlements and portals.** Five 3 × 3 settlements away from water; four
-  tunnel portals on the map edges, one per side.
+- **Settlements and portals.** Seven 3 × 3 settlements away from water; six
+  tunnel portals spread around the map edges.
 - **Roads.** A minimum spanning tree over settlements and portals, each edge
   routed with grid A* (forest costs more, existing roads cost less so routes
   merge, water is impassable). The road tiles become `world.roads`: nodes
