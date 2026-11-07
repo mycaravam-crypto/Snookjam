@@ -1,4 +1,4 @@
-import { ROAD_GEOMETRY, type TrafficSim, type Vehicle } from '@game/index'
+import { ROAD_GEOMETRY, VEHICLE_PROFILES, type TrafficSim, type Vehicle } from '@game/index'
 
 type Corner = readonly [number, number]
 
@@ -7,8 +7,9 @@ export function footprint(sim: TrafficSim, v: Vehicle, g = ROAD_GEOMETRY): Corne
   const { position: p, heading: h } = sim.lanePositionOf(v)
   const c = Math.cos(h)
   const s = Math.sin(h)
-  const L = g.vehicleLength / 2
-  const W = g.vehicleWidth / 2
+  const profile = VEHICLE_PROFILES[v.kind]
+  const L = profile.length / 2
+  const W = profile.width / 2
   return [
     [L, W],
     [-L, W],
