@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type Point } from '@game/index'
-import { canBuild, createGameController, type Tool } from '../game/gameController'
+import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, shopItems, type ConstructionOutcome, type Point, type ShopItemId } from '@game/index'
+import { canBuild, createGameController, type SignalTapResult, type Tool } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
 import GameHud from './GameHud.vue'
 import GameOverlay from './GameOverlay.vue'
@@ -10,7 +10,7 @@ import WorldCanvas from './WorldCanvas.vue'
 const emit = defineEmits<{ quit: [] }>()
 
 const game = createGameController(initialSeed())
-const { snapshot, construction, session, tool, selectedSignal } = game
+const { snapshot, construction, session, tool, selectedSignal, selectedRoundabout } = game
 const canvas = ref<InstanceType<typeof WorldCanvas> | null>(null)
 
 const world = computed(() => {
@@ -24,8 +24,20 @@ const sim = computed(() => {
 })
 const interactive = computed(() => canBuild(snapshot.value.state))
 
+/** Shop (coins → junction upgrades), opened from the toolbar. */
+const shopOpen = ref(false)
+const items = computed(() => shopItems(session.value.economy))
+const shopVisible = computed(() => shopOpen.value && interactive.value)
+
+function buy(item: ShopItemId): void {
+  const name = items.value.find((i) => i.id === item)!.name
+  lastSignalMessage = game.buy(item) ? `Bought ${name.toLowerCase()}` : `Not enough coins for ${name.toLowerCase()}`
+  refreshStatus()
+}
+
 const HINT = 'Drag from a road to another road to build a connection.'
 const SIGNAL_HINT = 'Tap a junction to add traffic lights.'
+const ROUNDABOUT_HINT = 'Tap a junction to build a roundabout.'
 const status = ref(HINT)
 let lastOutcome = ''
 let lastSignalMessage = ''
@@ -51,16 +63,36 @@ function chooseTool(next: Tool): void {
   refreshStatus()
 }
 
+const TAP_MESSAGES: Record<'signal' | 'roundabout', Record<SignalTapResult, string>> = {
+  signal: {
+    placed: 'Traffic lights added',
+    selected: 'Editing traffic lights',
+    none: 'No junction there: tap where three or more roads meet',
+    unavailable: '',
+    unowned: 'No traffic lights left: buy some in the shop',
+    occupied: 'That junction has a roundabout',
+  },
+  roundabout: {
+    placed: 'Roundabout built',
+    selected: 'Editing roundabout',
+    none: 'No junction there: tap where three or more roads meet',
+    unavailable: '',
+    unowned: 'No roundabouts left: buy one in the shop',
+    occupied: 'That junction has traffic lights: remove them first',
+  },
+}
+
 function onTap(point: Point): void {
-  const result = game.tapSignal(point)
-  lastSignalMessage =
-    result === 'placed'
-      ? 'Traffic lights added'
-      : result === 'selected'
-        ? 'Editing traffic lights'
-        : result === 'none'
-          ? 'No junction there: tap where three or more roads meet'
-          : ''
+  if (tool.value === 'road') return
+  shopOpen.value = false // keep the junction panel clear
+  const result = tool.value === 'signal' ? game.tapSignal(point) : game.tapRoundabout(point)
+  lastSignalMessage = TAP_MESSAGES[tool.value][result]
+  refreshStatus()
+}
+
+function removeRoundabout(): void {
+  game.removeSelectedRoundabout()
+  lastSignalMessage = 'Roundabout removed'
   refreshStatus()
 }
 
@@ -71,8 +103,8 @@ function removeSignal(): void {
 }
 
 function refreshStatus(): void {
-  if (tool.value === 'signal') {
-    status.value = lastSignalMessage || SIGNAL_HINT
+  if (tool.value !== 'road') {
+    status.value = lastSignalMessage || (tool.value === 'signal' ? SIGNAL_HINT : ROUNDABOUT_HINT)
     return
   }
   const preview = construction.value.preview
@@ -158,6 +190,7 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         :interactive="interactive"
         :tool="tool"
         :selected-signal="selectedSignal"
+        :selected-roundabout="selectedRoundabout"
         @outcome="onOutcome"
         @tap="onTap"
       />
@@ -176,9 +209,53 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
           :aria-pressed="tool === 'signal'"
           @click="chooseTool('signal')"
         >
-          Lights
+          Lights <span class="tool-count" data-testid="owned-signal">×{{ snapshot.inventory.signal }}</span>
+        </button>
+        <button
+          type="button"
+          data-testid="tool-roundabout"
+          :aria-pressed="tool === 'roundabout'"
+          @click="chooseTool('roundabout')"
+        >
+          Roundabout <span class="tool-count" data-testid="owned-roundabout">×{{ snapshot.inventory.roundabout }}</span>
+        </button>
+        <button
+          type="button"
+          class="tool-shop"
+          data-testid="tool-shop"
+          :aria-pressed="shopOpen"
+          :aria-expanded="shopOpen"
+          @click="shopOpen = !shopOpen"
+        >
+          Shop <span class="coin" aria-hidden="true">●</span> {{ snapshot.coins }}
         </button>
       </div>
+      <section v-if="shopVisible" class="shop-panel" data-testid="shop-panel" aria-label="Shop">
+        <header>
+          <h2>Shop</h2>
+          <span class="shop-coins" data-testid="shop-coins"><span class="coin" aria-hidden="true">●</span> {{ snapshot.coins }} coins</span>
+          <button type="button" class="shop-close" aria-label="Close shop" data-testid="shop-close" @click="shopOpen = false">✕</button>
+        </header>
+        <p class="shop-hint">Earn coins for every car that gets through and a bonus for each level you finish.</p>
+        <ul>
+          <li v-for="item in items" :key="item.id" :data-testid="`shop-item-${item.id}`">
+            <div class="shop-item-text">
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.description }}</span>
+              <span class="shop-owned">Owned {{ snapshot.inventory[item.id] }} · on map {{ snapshot.placed[item.id] }}</span>
+            </div>
+            <button
+              type="button"
+              class="shop-buy"
+              :data-testid="`shop-buy-${item.id}`"
+              :disabled="snapshot.coins < item.price"
+              @click="buy(item.id)"
+            >
+              Buy <span class="coin" aria-hidden="true">●</span> {{ item.price }}
+            </button>
+          </li>
+        </ul>
+      </section>
       <section
         v-if="interactive && tool === 'signal' && signal"
         class="signal-panel"
@@ -204,6 +281,17 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
           </button>
         </div>
         <button type="button" class="signal-remove" data-testid="signal-remove" @click="removeSignal">Remove</button>
+      </section>
+      <section
+        v-if="interactive && tool === 'roundabout' && selectedRoundabout !== undefined"
+        class="signal-panel"
+        data-side="top"
+        data-testid="roundabout-panel"
+        aria-label="Roundabout"
+      >
+        <h2>Roundabout</h2>
+        <p class="signal-phase">Traffic gives way and merges. Remove it to get it back.</p>
+        <button type="button" class="signal-remove" data-testid="roundabout-remove" @click="removeRoundabout">Remove</button>
       </section>
       <p v-if="interactive" class="status" data-testid="build-status" role="status" aria-live="polite">{{ status }}</p>
       <GameOverlay

@@ -7,15 +7,20 @@ import {
   type Point,
   type SessionSnapshot,
   type SessionState,
+  type ShopItemId,
 } from '@game/index'
 
-/** What pointer input on the map does: build roads, or place traffic lights (#32). */
-export type Tool = 'road' | 'signal'
+/** What pointer input on the map does: build roads, place traffic lights (#32) or roundabouts. */
+export type Tool = 'road' | 'signal' | 'roundabout'
 
 /** How far (tiles) from a junction's centre a tap still selects it. */
 export const SIGNAL_TAP_DISTANCE = 1.6
 
-export type SignalTapResult = 'placed' | 'selected' | 'none' | 'unavailable'
+/**
+ * 'unowned': nothing of that kind in the inventory (buy one in the shop);
+ * 'occupied': the junction already has the other kind of control.
+ */
+export type SignalTapResult = 'placed' | 'selected' | 'none' | 'unavailable' | 'unowned' | 'occupied'
 
 /** States in which the player may build roads (#7 contract). */
 export function canBuild(state: SessionState): boolean {
@@ -41,6 +46,13 @@ export interface GameController {
   /** Sets the selected lights' green time (seconds). */
   setSignalGreen(greenSec: number): void
   removeSelectedSignal(): void
+  /** Node of the roundabout being edited, if any. */
+  readonly selectedRoundabout: ShallowRef<NodeId | undefined>
+  /** Builds a roundabout on the junction at `point`, or selects the one there. */
+  tapRoundabout(point: Point): SignalTapResult
+  removeSelectedRoundabout(): void
+  /** Buys one shop item; returns whether it was bought. */
+  buy(item: ShopItemId): boolean
   start(): void
   pause(): void
   resume(): void
@@ -60,6 +72,7 @@ export function createGameController(seed: number | string): GameController {
   const construction = shallowRef(makeConstruction(session.value))
   const tool = shallowRef<Tool>('road')
   const selectedSignal = shallowRef<NodeId | undefined>(undefined)
+  const selectedRoundabout = shallowRef<NodeId | undefined>(undefined)
   let unsubscribe = bind(session.value)
 
   function makeConstruction(s: GameSession): ConstructionController {
@@ -74,6 +87,7 @@ export function createGameController(seed: number | string): GameController {
       if (construction.value.world !== s.world || construction.value.graph !== s.graph) {
         construction.value = makeConstruction(s)
         selectedSignal.value = undefined
+        selectedRoundabout.value = undefined
       }
       if (!canBuild(event.to)) construction.value.cancel()
       snapshot.value = s.snapshot()
@@ -95,10 +109,12 @@ export function createGameController(seed: number | string): GameController {
     construction,
     tool,
     selectedSignal,
+    selectedRoundabout,
     setTool(next) {
       if (tool.value === next) return
       construction.value.cancel()
       selectedSignal.value = undefined
+      selectedRoundabout.value = undefined
       tool.value = next
     },
     tapSignal(point) {
@@ -114,10 +130,42 @@ export function createGameController(seed: number | string): GameController {
         selectedSignal.value = existing.node
         return 'selected'
       }
-      s.placeSignal(junction.key)
+      selectedSignal.value = undefined
+      if (s.sim.roundaboutAt(junction.key)) return 'occupied'
+      if (s.owns('signal') <= 0) return 'unowned'
+      if (!s.placeSignal(junction.key)) return 'none'
       selectedSignal.value = junction.key
       refresh()
       return 'placed'
+    },
+    tapRoundabout(point) {
+      const s = session.value
+      if (!canBuild(s.state)) return 'unavailable'
+      const junction = s.sim.signalJunctionNear(point, SIGNAL_TAP_DISTANCE)
+      selectedRoundabout.value = undefined
+      if (!junction) return 'none'
+      if (s.sim.roundaboutAt(junction.key)) {
+        selectedRoundabout.value = junction.key
+        return 'selected'
+      }
+      if (s.sim.signalAt(junction.key)) return 'occupied'
+      if (s.owns('roundabout') <= 0) return 'unowned'
+      if (!s.placeRoundabout(junction.key)) return 'none'
+      selectedRoundabout.value = junction.key
+      refresh()
+      return 'placed'
+    },
+    removeSelectedRoundabout() {
+      const node = selectedRoundabout.value
+      if (node === undefined || !canBuild(session.value.state)) return
+      session.value.removeRoundabout(node)
+      selectedRoundabout.value = undefined
+      refresh()
+    },
+    buy(item) {
+      const ok = session.value.buy(item)
+      refresh()
+      return ok
     },
     setSignalGreen(greenSec) {
       const node = selectedSignal.value
@@ -143,6 +191,7 @@ export function createGameController(seed: number | string): GameController {
       session.value = new GameSession({ seed: nextSeed })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
+      selectedRoundabout.value = undefined
       unsubscribe = bind(session.value)
       session.value.start()
       snapshot.value = session.value.snapshot()

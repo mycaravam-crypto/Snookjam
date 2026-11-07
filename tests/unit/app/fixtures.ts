@@ -14,6 +14,11 @@ export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     activeVehicles: 17,
     pendingVehicles: 0,
     vehiclesExited: 40,
+    score: 1250,
+    coins: 34,
+    inventory: { signal: 1, roundabout: 0 },
+    placed: { signal: 0, roundabout: 1 },
+    levelReward: undefined,
     ...overrides,
   }
 }

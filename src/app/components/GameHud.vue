@@ -33,6 +33,14 @@ const canPause = computed(() => props.snapshot.state === 'running' || paused.val
         <dt>Cars</dt>
         <dd data-testid="hud-cars">{{ snapshot.activeVehicles }}</dd>
       </div>
+      <div>
+        <dt>Score</dt>
+        <dd data-testid="hud-score">{{ snapshot.score.toLocaleString('en-GB') }}</dd>
+      </div>
+      <div>
+        <dt>Coins</dt>
+        <dd data-testid="hud-coins"><span class="coin" aria-hidden="true">●</span> {{ snapshot.coins }}</dd>
+      </div>
     </dl>
 
     <div class="meter" :data-level="snapshot.congestionLevel" data-testid="hud-congestion">

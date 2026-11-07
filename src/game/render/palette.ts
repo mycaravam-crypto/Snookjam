@@ -60,4 +60,7 @@ export const COLORS = {
   signal: { red: '#ff4b3a', amber: '#ffb020', green: '#3be36a' },
   signalSelected: '#ffffff',
   signalCandidate: '#ffffffb3',
+  roundaboutRoad: '#5b5d58',
+  roundaboutIsland: '#4f9a3a',
+  roundaboutKerb: '#f4efd2',
 }

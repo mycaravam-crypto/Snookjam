@@ -54,7 +54,7 @@ describe('GameSession lifecycle', () => {
     expect(s.state).toBe('running')
     ticks(s, 0.1)
     expect(s.state).toBe('levelComplete')
-    expect(events.filter((e) => e.type === 'levelComplete')).toEqual([{ type: 'levelComplete', level: 1 }])
+    expect(events.filter((e) => e.type === 'levelComplete')).toEqual([{ type: 'levelComplete', level: 1, reward: expect.objectContaining({ coins: expect.any(Number) }) }])
     ticks(s, 5)
     expect(s.snapshot().levelTime).toBeCloseTo(30)
 

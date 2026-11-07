@@ -141,6 +141,13 @@ export interface TrafficOptions {
   readonly maxPendingSpawns?: number
   /** Seconds an intersection stays occupied after a vehicle crosses it. */
   readonly junctionClearSec?: number
+  /**
+   * Clear time at a roundabout as a share of `junctionClearSec` (shop item):
+   * traffic gives way and merges instead of stopping, so it turns over faster.
+   */
+  readonly roundaboutClearFactor?: number
+  /** Clear time at a signalled junction as a share of `junctionClearSec`. */
+  readonly signalClearFactor?: number
   /** Two-lane road and vehicle dimensions (defaults to ROAD_GEOMETRY). */
   readonly geometry?: RoadGeometry
   /** Relative spawn weights; normalized internally. */
@@ -237,6 +244,8 @@ interface MutableVehicle {
 
 /** Default seconds an intersection is occupied by a crossing vehicle. */
 export const DEFAULT_JUNCTION_CLEAR_SEC = 0.6
+/** Default roundabout clear time as a share of the junction clear time. */
+export const DEFAULT_ROUNDABOUT_CLEAR_FACTOR = 0.35
 
 const laneKey = (step: RouteStep): string => `${step.edge}>${step.from}`
 
@@ -249,6 +258,8 @@ export class TrafficSim {
   readonly minGap: number
   readonly maxPendingSpawns: number
   readonly junctionClearSec: number
+  readonly roundaboutClearFactor: number
+  readonly signalClearFactor: number
   readonly geometry: RoadGeometry
   private vehicleMix: VehicleMix
   /** Distance before a right-angle (or wider) intersection where vehicles stop (vehicle centre). */
@@ -289,6 +300,8 @@ export class TrafficSim {
   private junctionInfo = new Map<NodeId, Junction>()
   /** Placed signals by the node they were placed on (#32). */
   private readonly signalMap = new Map<NodeId, { greenSec: number; startedAt: number }>()
+  /** Nodes roundabouts were placed on (anchors, like signals). */
+  private readonly roundaboutSet = new Set<NodeId>()
   /** Vehicle id -> box key and time it started waiting for that box (right-of-way). */
   private readonly arrivals = new Map<number, { key: NodeId; at: number }>()
 
@@ -304,6 +317,11 @@ export class TrafficSim {
     this.vehicleMix = normalizeVehicleMix(options.vehicleMix)
     this.minGap = options.minGap ?? Math.max(VEHICLE_SPACING, minFollowingDistance(this.geometry))
     this.junctionClearSec = options.junctionClearSec ?? DEFAULT_JUNCTION_CLEAR_SEC
+    this.roundaboutClearFactor = options.roundaboutClearFactor ?? DEFAULT_ROUNDABOUT_CLEAR_FACTOR
+    this.signalClearFactor = options.signalClearFactor ?? 1
+    for (const f of [this.roundaboutClearFactor, this.signalClearFactor]) {
+      if (!(f >= 0) || !Number.isFinite(f)) throw new RangeError('clear factors must be non-negative')
+    }
     this.maxPendingSpawns = options.maxPendingSpawns ?? this.maxVehicles
     this.pending = Math.min(options.startingVehicles ?? DEFAULT_CONFIG.startingVehicles, this.maxPendingSpawns)
     if (!(this.minGap > 0)) throw new RangeError('minGap must be positive')
@@ -483,6 +501,7 @@ export class TrafficSim {
   placeSignal(node: NodeId, options: SignalOptions = {}): boolean {
     const junction = this.junctionAt(node)
     if (!junction || !this.isSignalJunction(junction)) return false
+    if (this.roundaboutAnchor(junction.key) !== undefined) return false
     const greenSec = options.greenSec ?? DEFAULT_SIGNAL_GREEN_SEC
     if (!(greenSec > 0) || !Number.isFinite(greenSec)) throw new RangeError('greenSec must be positive')
     const existing = this.signalAnchor(junction.key)
@@ -522,6 +541,70 @@ export class TrafficSim {
       if (view) views.push(view)
     }
     return views
+  }
+
+  /**
+   * Builds a roundabout on the junction containing `node` (shop item).
+   * Vehicles keep the one-at-a-time box, but it frees up after
+   * `junctionClearSec × roundaboutClearFactor`, so a busy junction carries
+   * far more traffic. Returns false if the junction cannot take one, or has
+   * traffic lights (remove those first). Placing it again is a no-op (true).
+   */
+  placeRoundabout(node: NodeId): boolean {
+    const junction = this.junctionAt(node)
+    if (!junction || !this.isSignalJunction(junction)) return false
+    if (this.signalAnchor(junction.key) !== undefined) return false
+    if (this.roundaboutAnchor(junction.key) === undefined) this.roundaboutSet.add(node)
+    return true
+  }
+
+  /** Removes the roundabout on the junction containing `node`. Returns whether there was one. */
+  removeRoundabout(node: NodeId): boolean {
+    this.refreshJunctions()
+    const key = this.junctionKeys.get(node)
+    const anchor = key === undefined ? (this.roundaboutSet.has(node) ? node : undefined) : this.roundaboutAnchor(key)
+    return anchor !== undefined && this.roundaboutSet.delete(anchor)
+  }
+
+  /** The junction with a roundabout containing `node`, if any. */
+  roundaboutAt(node: NodeId): Junction | undefined {
+    this.refreshJunctions()
+    const key = this.junctionKeys.get(node)
+    if (key === undefined || this.roundaboutAnchor(key) === undefined) return undefined
+    const junction = this.junctionInfo.get(key)
+    return junction && this.isSignalJunction(junction) ? junction : undefined
+  }
+
+  /** Junctions with an active roundabout, by key. */
+  roundabouts(): readonly Junction[] {
+    this.refreshJunctions()
+    const out = new Map<NodeId, Junction>()
+    for (const anchor of this.roundaboutSet) {
+      const j = this.roundaboutAt(anchor)
+      if (j) out.set(j.key, j)
+    }
+    return [...out.values()].sort((a, b) => a.key - b.key)
+  }
+
+  /** Seconds box `key` stays closed to the next vehicle after one enters. */
+  private clearSecFor(key: NodeId): number {
+    if (this.roundaboutSet.size > 0 && this.roundaboutAnchor(key) !== undefined) {
+      const j = this.junctionInfo.get(key)
+      if (j && this.isSignalJunction(j)) return this.junctionClearSec * this.roundaboutClearFactor
+    }
+    if (this.signalClearFactor !== 1 && this.signalMap.size > 0) {
+      const anchor = this.signalAnchor(key)
+      if (anchor !== undefined && this.signalView(anchor)) return this.junctionClearSec * this.signalClearFactor
+    }
+    return this.junctionClearSec
+  }
+
+  private roundaboutAnchor(key: NodeId): NodeId | undefined {
+    let best: NodeId | undefined
+    for (const anchor of this.roundaboutSet) {
+      if (this.junctionKeys.get(anchor) === key && (best === undefined || anchor < best)) best = anchor
+    }
+    return best
   }
 
   /** What `vehicle` will do where its current road ends (for turn indicators). */
@@ -1156,7 +1239,10 @@ export class TrafficSim {
         this.junctionHolder.set(key, v.id)
         v.holding = key
         this.arrivals.delete(v.id)
-        if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
+        {
+        const clearSec = this.clearSecFor(key)
+        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+      }
         continue
       }
       if (!this.remainingValid(v)) continue
@@ -1170,7 +1256,10 @@ export class TrafficSim {
       this.junctionHolder.set(key, v.id)
       v.holding = key
       this.arrivals.delete(v.id)
-      if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
+      {
+        const clearSec = this.clearSecFor(key)
+        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+      }
     }
   }
 
@@ -1269,7 +1358,10 @@ export class TrafficSim {
     if (key !== undefined) {
       this.junctionHolder.set(key, v.id)
       v.holding = key
-      if (this.junctionClearSec > 0) this.junctionFreeAt.set(key, this.time + this.junctionClearSec)
+      {
+        const clearSec = this.clearSecFor(key)
+        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+      }
     }
     this.totalSpawned++
   }

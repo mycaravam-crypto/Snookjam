@@ -45,7 +45,10 @@ watch(
           You kept traffic moving for {{ formatTime(snapshot.levelTime) }}.
           {{ snapshot.vehiclesExited }} cars got through so far.
         </p>
-        <p>The next level has a new map and heavier traffic.</p>
+        <p v-if="snapshot.levelReward" class="overlay-reward" data-testid="overlay-reward">
+          Level bonus: <strong>+{{ snapshot.levelReward.coins }} coins</strong> · score {{ snapshot.score.toLocaleString('en-GB') }}
+        </p>
+        <p>The next level has a new map and heavier traffic. Lights and roundabouts you placed go back into your stock.</p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-next" @click="$emit('nextLevel')">
             Continue to level {{ snapshot.level + 1 }}
@@ -61,6 +64,7 @@ watch(
           Congestion hit 100% on level {{ snapshot.level }} after {{ formatTime(snapshot.levelTime) }}.
           You survived {{ formatTime(snapshot.totalTime) }} in total and {{ snapshot.vehiclesExited }} cars got through.
         </p>
+        <p class="overlay-reward" data-testid="overlay-score">Final score <strong>{{ snapshot.score.toLocaleString('en-GB') }}</strong></p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-restart" @click="$emit('restart')">Try again</button>
           <button type="button" data-testid="overlay-new-map" @click="$emit('newMap')">New map</button>

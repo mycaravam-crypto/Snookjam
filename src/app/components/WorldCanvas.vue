@@ -5,6 +5,7 @@ import {
   FONT_FAMILY,
   fitViewport,
   renderConstructionPreview,
+  renderRoundabouts,
   renderSignals,
   renderVehicles,
   renderWorld,
@@ -28,12 +29,14 @@ const props = withDefaults(
     traffic?: TrafficSim
     /** Whether pointer input may build roads. */
     interactive?: boolean
-    /** 'road' drags build roads; 'signal' taps place or select traffic lights (#32). */
-    tool?: 'road' | 'signal'
+    /** 'road' drags build roads; 'signal' / 'roundabout' taps place or select junction upgrades. */
+    tool?: 'road' | 'signal' | 'roundabout'
     /** Node of the selected traffic lights, if any. */
     selectedSignal?: NodeId
+    /** Node of the selected roundabout, if any. */
+    selectedRoundabout?: NodeId
   }>(),
-  { construction: undefined, traffic: undefined, interactive: true, tool: 'road', selectedSignal: undefined },
+  { construction: undefined, traffic: undefined, interactive: true, tool: 'road', selectedSignal: undefined, selectedRoundabout: undefined },
 )
 const emit = defineEmits<{ outcome: [ConstructionOutcome]; tap: [Point] }>()
 
@@ -114,6 +117,10 @@ function draw(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
   if (props.traffic) {
+    renderRoundabouts(ctx, props.traffic, viewport, {
+      selected: props.selectedRoundabout,
+      showCandidates: props.tool === 'roundabout' && props.interactive,
+    })
     renderVehicles(ctx, props.traffic, viewport)
     renderSignals(ctx, props.traffic, viewport, { selected: props.selectedSignal, showCandidates: props.tool === 'signal' && props.interactive })
   }
@@ -132,7 +139,7 @@ function toWorld(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Point | undefine
 }
 
 function onPointerDown(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     if (!props.interactive || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
     const point = toWorld(e)
     if (!point) return
@@ -150,7 +157,7 @@ function onPointerDown(e: PointerEvent): void {
 }
 
 function onPointerMove(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     if (tapStart?.id === e.pointerId) e.preventDefault()
     return
   }
@@ -169,7 +176,7 @@ function onPointerMove(e: PointerEvent): void {
 }
 
 function onPointerUp(e: PointerEvent): void {
-  if (props.tool === 'signal') {
+  if (props.tool !== 'road') {
     const start = tapStart
     tapStart = undefined
     if (!start || start.id !== e.pointerId) return
@@ -241,10 +248,10 @@ watch(
   },
 )
 watch(
-  () => [props.tool, props.selectedSignal] as const,
+  () => [props.tool, props.selectedSignal, props.selectedRoundabout] as const,
   () => {
     tapStart = undefined
-    if (canvas.value) canvas.value.style.cursor = props.tool === 'signal' ? 'pointer' : 'default'
+    if (canvas.value) canvas.value.style.cursor = props.tool !== 'road' ? 'pointer' : 'default'
     scheduleDraw()
   },
 )
@@ -264,7 +271,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
+    :aria-label="tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : tool === 'roundabout' ? `Map of seed ${world.seed}. Tap a junction to build or edit a roundabout.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

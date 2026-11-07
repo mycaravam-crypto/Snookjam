@@ -21,18 +21,31 @@ import { FixedStepClock, TrafficSim, type SignalOptions } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
+import {
+  createEconomy,
+  EMPTY_INVENTORY,
+  exitReward,
+  levelReward,
+  priceOf,
+  type EconomyConfig,
+  type Inventory,
+  type Reward,
+  type ShopItemId,
+} from './economy'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
 
 export type SessionEvent =
   | { readonly type: 'stateChange'; readonly from: SessionState; readonly to: SessionState }
-  | { readonly type: 'levelComplete'; readonly level: number }
+  | { readonly type: 'levelComplete'; readonly level: number; readonly reward: Reward }
   | { readonly type: 'gameOver'; readonly level: number; readonly levelTime: number; readonly totalTime: number }
 
 export interface SessionOptions {
   readonly seed: number | string
   readonly balance?: Partial<BalanceConfig>
   readonly world?: Partial<WorldOptions>
+  /** Score, coin and shop tuning. */
+  readonly economy?: Partial<EconomyConfig>
   /** Fixed simulation rate; defaults to the game config (20 Hz). */
   readonly simulationHz?: number
 }
@@ -54,6 +67,16 @@ export interface SessionSnapshot {
   readonly activeVehicles: number
   readonly pendingVehicles: number
   readonly vehiclesExited: number
+  /** Points scored this run (vehicles through plus level bonuses). */
+  readonly score: number
+  /** Coins available to spend in the shop. */
+  readonly coins: number
+  /** Shop items owned but not placed. */
+  readonly inventory: Inventory
+  /** Shop items currently placed on this level's map. */
+  readonly placed: Inventory
+  /** Bonus paid for the last completed level, while its overlay shows. */
+  readonly levelReward: Reward | undefined
 }
 
 interface Level {
@@ -64,6 +87,7 @@ interface Level {
 
 export class GameSession {
   readonly balance: BalanceConfig
+  readonly economy: EconomyConfig
   readonly seed: number
   private readonly worldOptions: Partial<WorldOptions>
   private readonly clock: FixedStepClock
@@ -76,9 +100,16 @@ export class GameSession {
   private levelTime = 0
   private completedTime = 0
   private exitedInRun = 0
+  private scoreValue = 0
+  private coinsValue = 0
+  private owned: Record<ShopItemId, number> = { ...EMPTY_INVENTORY }
+  private onMap: Record<ShopItemId, number> = { ...EMPTY_INVENTORY }
+  private lastReward: Reward | undefined
 
   constructor(options: SessionOptions) {
     this.balance = createBalance(options.balance)
+    this.economy = createEconomy(options.economy)
+    this.coinsValue = this.economy.startingCoins
     this.seed = normalizeSeed(options.seed)
     this.worldOptions = {
       width: DEFAULT_CONFIG.mapWidth,
@@ -113,6 +144,36 @@ export class GameSession {
     return this.congestionValue
   }
 
+  get coins(): number {
+    return this.coinsValue
+  }
+
+  get score(): number {
+    return this.scoreValue
+  }
+
+  /** Owned, unplaced count of a shop item. */
+  owns(item: ShopItemId): number {
+    return this.owned[item]
+  }
+
+  canAfford(item: ShopItemId): boolean {
+    return this.coinsValue >= priceOf(this.economy, item)
+  }
+
+  /**
+   * Buys one shop item into the inventory. Allowed whenever the run is not
+   * over (including between levels). Returns false if coins are short.
+   */
+  buy(item: ShopItemId): boolean {
+    if (this.stateValue === 'gameOver' || this.stateValue === 'ready') return false
+    const price = priceOf(this.economy, item)
+    if (this.coinsValue < price) return false
+    this.coinsValue -= price
+    this.owned[item]++
+    return true
+  }
+
   /** Subscribes to lifecycle events; returns an unsubscribe function. */
   subscribe(listener: (event: SessionEvent) => void): () => void {
     this.listeners.add(listener)
@@ -135,6 +196,11 @@ export class GameSession {
       activeVehicles: stats.active,
       pendingVehicles: stats.pendingSpawns,
       vehiclesExited: this.exitedInRun,
+      score: this.scoreValue,
+      coins: this.coinsValue,
+      inventory: { ...this.owned },
+      placed: { ...this.onMap },
+      levelReward: this.stateValue === 'levelComplete' ? this.lastReward : undefined,
     }
   }
 
@@ -163,6 +229,11 @@ export class GameSession {
     this.levelNumber = 1
     this.completedTime = 0
     this.exitedInRun = 0
+    this.scoreValue = 0
+    this.coinsValue = this.economy.startingCoins
+    this.owned = { ...EMPTY_INVENTORY }
+    this.onMap = { ...EMPTY_INVENTORY }
+    this.lastReward = undefined
     this.loadLevel(1)
     this.transition('running')
     return true
@@ -201,6 +272,7 @@ export class GameSession {
     const report = sim.step(dt)
     this.levelTime += dt
     this.exitedInRun += report.exited
+    if (report.exited > 0) this.earn(exitReward(this.economy, report.exited))
 
     let blocked = 0
     for (const v of sim.vehicles()) if (v.waitingFor >= this.balance.blockedAfterSec) blocked++
@@ -215,8 +287,11 @@ export class GameSession {
     if (this.congestionValue >= this.balance.congestionLimit) {
       this.endRun()
     } else if (this.levelTime >= this.balance.levelDurationSec - 1e-9) {
+      const reward = levelReward(this.economy, this.levelNumber, this.congestionValue, this.balance.congestionLimit)
+      this.earn(reward)
+      this.lastReward = reward
       this.transition('levelComplete')
-      this.emit({ type: 'levelComplete', level: this.levelNumber })
+      this.emit({ type: 'levelComplete', level: this.levelNumber, reward })
     }
   }
 
@@ -265,13 +340,57 @@ export class GameSession {
    */
   placeSignal(node: NodeId, options?: SignalOptions): boolean {
     this.requireBuildable('place signals')
-    return this.current.sim.placeSignal(node, options)
+    const sim = this.current.sim
+    // Re-timing lights already there is free; new lights use one from the inventory.
+    if (sim.signalAt(node)) return sim.placeSignal(node, options)
+    if (this.owned.signal <= 0) return false
+    if (!sim.placeSignal(node, options)) return false
+    this.owned.signal--
+    this.onMap.signal++
+    return true
   }
 
-  /** Removes the signal on the junction containing `node`. Returns whether there was one. */
+  /** Removes the signal on the junction containing `node` back into the inventory. Returns whether there was one. */
   removeSignal(node: NodeId): boolean {
     this.requireBuildable('remove signals')
-    return this.current.sim.removeSignal(node)
+    if (!this.current.sim.removeSignal(node)) return false
+    this.owned.signal++
+    this.onMap.signal = Math.max(0, this.onMap.signal - 1)
+    return true
+  }
+
+  /**
+   * Builds a roundabout from the inventory on the junction containing
+   * `node`. Returns false without one in stock, if the junction cannot take
+   * one, has lights, or already has a roundabout.
+   */
+  placeRoundabout(node: NodeId): boolean {
+    this.requireBuildable('build roundabouts')
+    const sim = this.current.sim
+    if (this.owned.roundabout <= 0 || sim.roundaboutAt(node)) return false
+    if (!sim.placeRoundabout(node)) return false
+    this.owned.roundabout--
+    this.onMap.roundabout++
+    return true
+  }
+
+  /** Removes the roundabout on the junction containing `node` back into the inventory. */
+  removeRoundabout(node: NodeId): boolean {
+    this.requireBuildable('remove roundabouts')
+    if (!this.current.sim.removeRoundabout(node)) return false
+    this.owned.roundabout++
+    this.onMap.roundabout = Math.max(0, this.onMap.roundabout - 1)
+    return true
+  }
+
+  /** Test hook: adds coins. */
+  grantCoinsForTesting(coins: number): void {
+    this.coinsValue += coins
+  }
+
+  private earn(reward: Reward): void {
+    this.coinsValue += reward.coins
+    this.scoreValue += reward.points
   }
 
   private requireBuildable(action: string): void {
@@ -296,6 +415,11 @@ export class GameSession {
   }
 
   private loadLevel(level: number): void {
+    // A new map: whatever was placed on the old one goes back into stock.
+    for (const item of Object.keys(this.onMap) as ShopItemId[]) {
+      this.owned[item] += this.onMap[item]
+      this.onMap[item] = 0
+    }
     this.current = this.buildLevel(level)
     this.congestionValue = 0
     this.levelTime = 0
@@ -314,6 +438,8 @@ export class GameSession {
       spawnIntervalSec: spawnIntervalAt(this.balance, level, 0),
       minSpawnIntervalSec: this.balance.minSpawnIntervalSec,
       junctionClearSec: this.balance.junctionClearSec,
+      roundaboutClearFactor: this.balance.roundaboutClearFactor,
+      signalClearFactor: this.balance.signalClearFactor,
       vehicleMix: vehicleMixFor(this.balance, level),
     })
     return { world, graph, sim }

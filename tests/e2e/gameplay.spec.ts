@@ -54,9 +54,9 @@ function usefulRoad(world: World): { from: Point; to: Point } {
   throw new Error(`no useful road on seed ${SEED}`)
 }
 
-function offRoadPoint(world: World): Point {
+function offRoadPoint(world: World, fromY = 2.5): Point {
   const graph = createRoadGraph(world)
-  for (let y = 2.5; y < world.height - 2; y++) {
+  for (let y = fromY; y < world.height - 2; y++) {
     for (let x = 2.5; x < world.width - 2; x++) if (!graph.nearestLocation({ x, y }, 3)) return { x, y }
   }
   throw new Error('no off-road point')
@@ -158,6 +158,8 @@ const world = generateWorld(SEED)
 const road = usefulRoad(world)
 const curve = freehandRoad(world)
 const offRoad = offRoadPoint(world)
+/** Open country clear of the toolbar in the top-left corner. */
+const openCountry = offRoadPoint(world, Math.floor(world.height / 3) + 0.5)
 const openEnded = deadEndThenConnect(world)
 const crossing = crossingRoad(world)
 
@@ -474,17 +476,26 @@ const signalJunction = (page: Page) =>
     return { key: j.key as number, center: j.center as Point }
   })
 
+/** Buys one item through the shop panel, then closes it. */
+async function buyInShop(page: Page, item: 'signal' | 'roundabout'): Promise<void> {
+  await page.getByTestId('tool-shop').click()
+  await page.getByTestId(`shop-buy-${item}`).click()
+  await page.getByTestId('shop-close').click()
+  await expect(page.getByTestId(`owned-${item}`)).not.toHaveText('×0')
+}
+
 const signalCount = (page: Page) => page.evaluate(() => (window as any).__snookjam.session.value.sim.signals().length as number)
 
 test.describe('traffic lights (#32)', () => {
   test('L1. places, configures and removes lights with the mouse', async ({ page }) => {
     await play(page)
+    await buyInShop(page, 'signal')
     await page.getByTestId('tool-signal').click()
     await expect(page.getByTestId('tool-signal')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('build-status')).toContainText('Tap a junction')
 
     // Tapping open country explains what to tap.
-    const away = await toScreen(page, offRoad)
+    const away = await toScreen(page, openCountry)
     await page.mouse.click(away.x, away.y)
     await expect(page.getByTestId('build-status')).toContainText('No junction there')
     expect(await signalCount(page)).toBe(0)
@@ -518,6 +529,7 @@ test.describe('traffic lights (#32)', () => {
 
   test('L2. places lights with touch', async ({ page }) => {
     await play(page)
+    await buyInShop(page, 'signal')
     await page.getByTestId('tool-signal').click()
     const junction = await signalJunction(page)
     const at = await toScreen(page, junction.center)
@@ -535,6 +547,7 @@ test.describe('traffic lights (#32)', () => {
 
   test('L3. vehicles enter only on green and queue on red', async ({ page }) => {
     await play(page)
+    await buyInShop(page, 'signal')
     await page.getByTestId('tool-signal').click()
     const junction = await signalJunction(page)
     const at = await toScreen(page, junction.center)
@@ -624,4 +637,48 @@ test('stays responsive with about 100 active vehicles', async ({ page }) => {
   expect(result.active).toBeGreaterThanOrEqual(80)
   // Responsive: mean frame time under 50 ms (20+ fps) even on a CI runner.
   expect(result.mean).toBeLessThan(50)
+})
+
+test.describe('shop, coins and roundabouts', () => {
+  test('S1. cars earn coins, the shop sells a roundabout and the tool builds it', async ({ page }) => {
+    await play(page)
+    const coins = () => page.evaluate(() => (window as any).__snookjam.snapshot.value.coins as number)
+    const start = await coins()
+    await expect(page.getByTestId('hud-coins')).toContainText(String(start))
+
+    // Without stock, the roundabout tool points at the shop.
+    await page.getByTestId('tool-roundabout').click()
+    const junction = await signalJunction(page)
+    const at = await toScreen(page, junction.center)
+    await page.mouse.click(at.x, at.y)
+    await expect(page.getByTestId('build-status')).toContainText('buy one in the shop')
+
+    // Traffic through the tunnels pays out until a roundabout is affordable.
+    await page.getByTestId('tool-shop').click()
+    await expect(page.getByTestId('shop-buy-roundabout')).toBeDisabled()
+    await page.evaluate(() => {
+      const g = (window as any).__snookjam
+      const s = g.session.value
+      for (let i = 0; i < 20 * 120 && s.coins < 40; i++) {
+        s.tick()
+        s.setCongestionForTesting(0)
+      }
+      g.frame(0)
+    })
+    expect(await coins()).toBeGreaterThanOrEqual(40)
+    expect(await page.evaluate(() => (window as any).__snookjam.snapshot.value.score as number)).toBeGreaterThan(0)
+    await page.getByTestId('shop-buy-roundabout').click()
+    await expect(page.getByTestId('owned-roundabout')).toHaveText('×1')
+    await page.getByTestId('shop-close').click()
+
+    await page.mouse.click(at.x, at.y)
+    await expect(page.getByTestId('build-status')).toContainText('Roundabout built')
+    await expect(page.getByTestId('roundabout-panel')).toBeVisible()
+    await expect(page.getByTestId('owned-roundabout')).toHaveText('×0')
+    expect(await page.evaluate(() => (window as any).__snookjam.session.value.sim.roundabouts().length)).toBe(1)
+
+    await page.getByTestId('roundabout-remove').click()
+    await expect(page.getByTestId('owned-roundabout')).toHaveText('×1')
+    expect(await page.evaluate(() => (window as any).__snookjam.session.value.sim.roundabouts().length)).toBe(0)
+  })
 })
