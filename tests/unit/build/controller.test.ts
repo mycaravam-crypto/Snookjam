@@ -69,6 +69,30 @@ describe('ConstructionController', () => {
     expect(controller.builtRoads).toHaveLength(1)
   })
 
+  it('commits the exact freehand path shown in the preview', () => {
+    const { controller, graph } = setup()
+    const start = { x: 2.5, y: 1.5 }
+    const end = { x: 2.5, y: 5.5 }
+    controller.pointerDown(start)
+    controller.pointerMove([
+      { x: 2.8, y: 2.2 },
+      { x: 3.3, y: 3 },
+      { x: 3.3, y: 4 },
+      { x: 2.8, y: 4.8 },
+      end,
+    ])
+    const previewPath = controller.preview!.path.map((p) => ({ x: p.x, y: p.y }))
+    expect(controller.preview!.check.ok).toBe(true)
+
+    const outcome = controller.pointerUp(end)
+    expect(outcome.kind).toBe('committed')
+    if (outcome.kind !== 'committed') return
+    expect(outcome.road.points).toEqual(previewPath)
+
+    const graphPoints = outcome.result.nodes.map((id) => graph.getNode(id)!.position)
+    expect(graphPoints).toEqual(expect.arrayContaining(previewPath))
+  })
+
   it('leaves the graph unchanged on an invalid pointer-up', () => {
     const { controller, graph } = setup()
     const version = graph.version
