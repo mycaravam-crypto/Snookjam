@@ -153,6 +153,14 @@ randomness from a seeded source.
 - Each road has one lane per direction. Vehicles keep at least `minGap`
   (1 tile) apart, never overtake, and only enter the next road when it is
   below capacity. Otherwise they wait at the junction, which forms queues.
+- Vehicles accelerate and brake rather than starting and stopping instantly
+  (#31). Each class has its own acceleration and braking (`VEHICLE_PROFILES`:
+  cars 4 / 6 tiles/s², vans 3.2 / 5, trucks 2.2 / 4). A vehicle never drives
+  faster than lets it stop before the hard limit ahead (the vehicle in front,
+  a stop line, or the end of a road it cannot enter yet), so braking spreads
+  back along a queue and vehicles still never overlap. Vehicles leave tunnels
+  at cruising speed, and may claim a free junction box once they are within
+  braking distance of its stop line, so they roll through clear junctions.
 - Routes are re-planned only at junctions, after the road graph changes, so
   new roads are used without vehicles teleporting or reversing. A vehicle
   with no route waits in the `stuck` state until the graph changes.
@@ -187,8 +195,9 @@ Levels last 180 s. The spawn interval starts at 2.5 s, ramps down to 60 % of
 that within a level, starts 25 % lower each level, and never drops below
 0.8 s. Each level also adds 2 starting vehicles. All values are in
 `DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
-without player roads: levels 1–2 stay below about 5 % congestion, level 3
-peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
+without player roads (seeds 1–10): levels 1–2 stay below about 8 %
+congestion, level 3 peaks at 4–90 % (2 of 10 seeds lost), and level 4 is
+lost on every seed.
 
 ## Testing
 
@@ -196,10 +205,10 @@ peaks at 20–95 % (2 of 10 seeds lost), and level 4 is lost on every seed.
   road graph and routing, traffic, construction, congestion and lifecycle.
 - **Integration tests** (`tests/integration`) run the whole game logic
   together with fixed seeds and fixed 50 ms steps, with no wall-clock timing.
-  The core scenario uses seed 9, level 3. Without player roads the level is
-  lost (congestion reaches 100 % at 164 s). A single road from (8.5, 4.5) to
-  (1.5, 8.5), built 12 s in, completes the level with congestion peaking
-  around 76 %, and more vehicles leave the map. If generation, traffic rules
+  The core scenario uses seed 10, level 3. Without player roads the level is
+  lost (congestion reaches 100 % at 146 s). A single road from (38.5, 7.5) to
+  (32.5, 8.5), built 12 s in, completes the level with congestion peaking
+  around 9 %, and more vehicles leave the map. If generation, traffic rules
   or balance change, find a new relieving road by trying every valid single
   road on a map that is lost without help.
 - **Browser tests** (`tests/e2e`) start the production build with

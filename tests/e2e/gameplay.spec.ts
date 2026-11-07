@@ -16,7 +16,9 @@ import {
   createRoadGraph,
   findRoute,
   generateWorld,
+  vehicleFollowingGap,
   type Point,
+  type VehicleClass,
   type World,
 } from '../../src/game'
 
@@ -366,6 +368,49 @@ test.describe('critical player flow', () => {
     await fastForward(page, 20)
     expect(errors).toEqual([])
     expect((await state(page)).state).toBe('running')
+  })
+
+  test('4f. mixed traffic stays gap-safe and flowing under sustained congestion (#31)', async ({ page }) => {
+    await play(page)
+    const kinds: VehicleClass[] = ['car', 'van', 'truck']
+    const gaps = Object.fromEntries(kinds.flatMap((f) => kinds.map((l) => [`${f}>${l}`, vehicleFollowingGap(f, l)])))
+    const result = await page.evaluate((gaps) => {
+      const s = (window as any).__snookjam.session.value
+      s.sim.setVehicleMix({ car: 1, van: 1, truck: 1 })
+      s.sim.queueSpawns(60)
+      s.sim.setSpawnInterval(0.8)
+      const exitedBefore = s.sim.stats().totalExited
+      let overlaps = 0
+      let peakWaiting = 0
+      const windows: number[] = []
+      for (let i = 0; i < 20 * 60 && s.state === 'running'; i++) {
+        if (i % 200 === 0) windows.push(s.sim.stats().totalExited)
+        s.tick()
+        s.setCongestionForTesting(0) // keep the run going under heavy load
+        peakWaiting = Math.max(peakWaiting, s.sim.stats().waiting)
+        for (const edge of s.graph.edges()) {
+          for (const from of [edge.a, edge.b]) {
+            const lane = s.sim.laneOccupants(edge.id, from)
+            for (let k = 1; k < lane.length; k++) {
+              const gap = lane[k - 1].progress - lane[k].progress
+              if (gap < (gaps[`${lane[k].kind}>${lane[k - 1].kind}`] ?? 0) - 1e-6) overlaps++
+            }
+          }
+        }
+      }
+      const stats = s.sim.stats()
+      windows.push(stats.totalExited)
+      const perWindow = windows.slice(1).map((n, k) => n - windows[k]!)
+      return { overlaps, peakWaiting, perWindow, exited: stats.totalExited - exitedBefore, kinds: [...new Set(s.sim.vehicles().map((v: any) => v.kind))].length }
+    }, gaps)
+    expect(result.overlaps).toBe(0)
+    expect(result.peakWaiting).toBeGreaterThan(5) // queues really formed
+    expect(result.kinds).toBeGreaterThan(1)
+    // Traffic keeps leaving in every 10 s window once vehicles have had time
+    // to cross the map: no gridlock or slow lock-up.
+    expect(result.perWindow).toHaveLength(6)
+    for (const n of result.perWindow.slice(2)) expect(n).toBeGreaterThan(0)
+    expect(result.exited).toBeGreaterThan(15)
   })
 
   test('6. pauses and resumes', async ({ page }) => {
