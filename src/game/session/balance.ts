@@ -63,10 +63,10 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   // and starting fleet while preserving a forgiving first level.
   baseSpawnIntervalSec: 2.2,
   minSpawnIntervalSec: 0.8,
-  levelSpawnFactor: 0.75,
+  levelSpawnFactor: 0.85,
   inLevelRampFactor: 0.6,
   startingVehicles: 16,
-  startingVehiclesPerLevel: 4,
+  startingVehiclesPerLevel: 2,
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
