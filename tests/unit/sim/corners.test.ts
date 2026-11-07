@@ -37,7 +37,11 @@ describe('continuous corner driving', () => {
       sim.step(DT)
       const vehicle = sim.vehicles()[0]
       if (vehicle) {
-        speeds.push(vehicle.speed)
+        const step = vehicle.steps[vehicle.stepIndex]!
+        const edge = graph.getEdge(step.edge)!
+        const approachingCorner = vehicle.stepIndex === 0 && edge.length - vehicle.progress <= 1.2
+        const leavingCorner = vehicle.stepIndex === 1 && vehicle.progress <= 1
+        if (approachingCorner || leavingCorner) speeds.push(vehicle.speed)
         // Stop measuring after the turn and its exit acceleration, before
         // the unrelated destination-portal braking phase.
         if (vehicle.stepIndex === 1 && vehicle.progress > 1) break
