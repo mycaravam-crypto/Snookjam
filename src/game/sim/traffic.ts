@@ -535,17 +535,21 @@ export class TrafficSim {
     const a = this.direction(inStep)
     const b = this.direction(outStep)
     const d = laneOffset(this.geometry)
-    const m = miterOffset(a, b, d)
     const p0 = { x: node.x - a.y * d - a.x * r, y: node.y + a.x * d - a.y * r }
-    const p1 = { x: node.x + m.x, y: node.y + m.y }
-    const p2 = { x: node.x - b.y * d + b.x * r, y: node.y + b.x * d + b.y * r }
+    const p3 = { x: node.x - b.y * d + b.x * r, y: node.y + b.x * d + b.y * r }
+    // Cubic controls follow the incoming and outgoing directions. This keeps
+    // the curve tangent to both straight lane sections instead of snapping
+    // its heading where the transition starts or ends.
+    const handle = Math.min(r, Math.hypot(p3.x - p0.x, p3.y - p0.y) * 0.55)
+    const p1 = { x: p0.x + a.x * handle, y: p0.y + a.y * handle }
+    const p2 = { x: p3.x - b.x * handle, y: p3.y - b.y * handle }
     const u = 1 - tau
     const position = {
-      x: u * u * p0.x + 2 * u * tau * p1.x + tau * tau * p2.x,
-      y: u * u * p0.y + 2 * u * tau * p1.y + tau * tau * p2.y,
+      x: u ** 3 * p0.x + 3 * u * u * tau * p1.x + 3 * u * tau * tau * p2.x + tau ** 3 * p3.x,
+      y: u ** 3 * p0.y + 3 * u * u * tau * p1.y + 3 * u * tau * tau * p2.y + tau ** 3 * p3.y,
     }
-    const tx = u * (p1.x - p0.x) + tau * (p2.x - p1.x)
-    const ty = u * (p1.y - p0.y) + tau * (p2.y - p1.y)
+    const tx = 3 * u * u * (p1.x - p0.x) + 6 * u * tau * (p2.x - p1.x) + 3 * tau * tau * (p3.x - p2.x)
+    const ty = 3 * u * u * (p1.y - p0.y) + 6 * u * tau * (p2.y - p1.y) + 3 * tau * tau * (p3.y - p2.y)
     return { position, heading: Math.atan2(ty, tx) }
   }
 

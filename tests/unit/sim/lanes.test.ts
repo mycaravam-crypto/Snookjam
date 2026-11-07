@@ -104,6 +104,31 @@ describe('following within a lane', () => {
 })
 
 describe('curved roads', () => {
+  it('keeps lane heading continuous where a bend meets straight road', () => {
+    const g = RoadGraph.fromLayout({
+      nodes: [{ id: 0, x: 0, y: 0 }, { id: 1, x: 4, y: 0 }, { id: 2, x: 4, y: 4 }],
+      segments: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
+    })
+    const sim = new TrafficSim(g, { portals: [0, 2], random: { next: () => 0 }, startingVehicles: 1 })
+    sim.step(DT)
+    const vehicle = sim.vehicles()[0]!
+    expect(vehicle.steps).toHaveLength(2)
+
+    const radius = ROAD_GEOMETRY.cornerRadius
+    const epsilon = 1e-4
+    const incoming = sim.lanePositionOf({ ...vehicle, stepIndex: 0, progress: 4 - radius - epsilon })
+    const curveStart = sim.lanePositionOf({ ...vehicle, stepIndex: 0, progress: 4 - radius + epsilon })
+    const curveEnd = sim.lanePositionOf({ ...vehicle, stepIndex: 1, progress: radius - epsilon })
+    const outgoing = sim.lanePositionOf({ ...vehicle, stepIndex: 1, progress: radius + epsilon })
+    const angleDelta = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))
+
+    expect(angleDelta(incoming.heading, curveStart.heading)).toBeLessThan(0.01)
+    expect(angleDelta(curveEnd.heading, outgoing.heading)).toBeLessThan(0.01)
+    expect(Math.hypot(curveStart.position.x - incoming.position.x, curveStart.position.y - incoming.position.y)).toBeLessThan(0.001)
+    expect(Math.hypot(outgoing.position.x - curveEnd.position.x, outgoing.position.y - curveEnd.position.y)).toBeLessThan(0.001)
+  })
+
+
   it('keeps traffic smooth on a committed freehand S-curve', () => {
     const path = buildRoadPath(
       { x: 0, y: 0 },
