@@ -162,7 +162,9 @@ describe('generous snapping', () => {
   })
 
   it('updates the snap continuously while drawing', () => {
-    const { controller } = setup()
+    // A release radius equal to the snap radius, so leaving the snap range
+    // drops the snap immediately (hysteresis is covered in snapLatch.test.ts).
+    const { controller } = setup(constructionOptions({ endSnapDistance: 1.25, endSnapRelease: 1.25 }))
     controller.pointerDown({ x: 3, y: 1.7 })
     controller.pointerMove(CURVE.slice(0, 2))
     expect(controller.preview!.endSnap).toBeUndefined()

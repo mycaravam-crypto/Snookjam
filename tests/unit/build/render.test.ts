@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
+import { constructionOptions, ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
 import type { ConstructionContext } from '@game/index'
 import { asciiWorld, LOOP } from './fixtures'
 
@@ -17,7 +17,8 @@ describe('construction rendering', () => {
   const v = fitViewport(world.width, world.height, 600, 400)
 
   it('draws valid previews solid and invalid previews dashed', () => {
-    const controller = new ConstructionController(world, createRoadGraph(world))
+    const options = constructionOptions({ endSnapDistance: 1.25, endSnapRelease: 1.25 })
+    const controller = new ConstructionController(world, createRoadGraph(world), options)
     controller.pointerDown({ x: 2.5, y: 1.5 })
     controller.pointerMove({ x: 2.5, y: 5.5 })
     const valid = recorder()

@@ -500,8 +500,36 @@ export class RoadGraph {
    * Ties are broken by edge id for determinism.
    */
   nearestLocation(point: Point, maxDistance = Infinity, nodeSnap = 0.5): NearestLocation | undefined {
+    return this.nearestAmong(point, this.edgeMap.values(), true, maxDistance, nodeSnap)
+  }
+
+  /**
+   * Like `nearestLocation`, but only considers the road at `near`: the edge it
+   * lies on, or every edge meeting it if it is a node. Used to keep a snap
+   * latched to one road while the pointer jitters near competing roads.
+   * Returns undefined if `near` no longer exists or is out of range.
+   */
+  nearestLocationOn(near: RoadLocation, point: Point, maxDistance = Infinity, nodeSnap = 0.5): NearestLocation | undefined {
+    if (!this.locationExists(near)) return undefined
+    if (near.kind === 'edge') return this.nearestAmong(point, [this.requireEdge(near.edge)], false, maxDistance, nodeSnap)
+    const incident = this.incidence.get(near.node)!
+    if (incident.length === 0) {
+      const position = this.requireNode(near.node).position
+      const dist = distance(point, position)
+      return dist <= maxDistance ? { location: near, position, distance: dist } : undefined
+    }
+    return this.nearestAmong(point, incident.map((id) => this.requireEdge(id)), false, maxDistance, nodeSnap)
+  }
+
+  private nearestAmong(
+    point: Point,
+    edges: Iterable<RoadEdge>,
+    includeIsolated: boolean,
+    maxDistance: number,
+    nodeSnap: number,
+  ): NearestLocation | undefined {
     let best: { edge: RoadEdge; t: number; dist: number } | undefined
-    for (const edge of this.edgeMap.values()) {
+    for (const edge of edges) {
       const p = this.requireNode(edge.a).position
       const q = this.requireNode(edge.b).position
       const t = projectT(point, p, q)
@@ -519,7 +547,7 @@ export class RoadGraph {
     }
     // Isolated nodes (no edges yet) are valid connection points too.
     let isolated: { node: RoadNode; dist: number } | undefined
-    for (const node of this.nodeMap.values()) {
+    for (const node of includeIsolated ? this.nodeMap.values() : []) {
       if (this.incidence.get(node.id)!.length > 0) continue
       const dist = distance(point, node.position)
       if (dist <= maxDistance && (!isolated || dist < isolated.dist - EPSILON)) isolated = { node, dist }

@@ -62,7 +62,8 @@ export type CommitConnection = (from: RoadLocation, to: ConstructionTarget, via:
  *
  *   pointerDown on a road -> preview starts, trajectory capture begins
  *   pointerMove            -> samples are recorded; the smoothed preview
- *                             follows them and the end re-snaps continuously
+ *                             follows them and the end re-snaps continuously,
+ *                             staying latched to its road (endSnapRelease)
  *   pointerUp              -> commits exactly one road, or none
  *
  * Commits mutate the shared RoadGraph so later route queries use the new
@@ -110,6 +111,7 @@ export class ConstructionController {
       return false
     }
     this.samples = [{ x: point.x, y: point.y }]
+    this.previewState = undefined // a new gesture starts without a latch
     this.previewState = this.makePreview(start.position, point)
     this.emit()
     return true
@@ -175,7 +177,14 @@ export class ConstructionController {
   }
 
   private makePreview(from: Point, pointer: Point): ConstructionPreview {
-    const check = checkPath(this.world, this.graph, from, pointer, this.samples.slice(1), this.options)
+    // Latch to the road the end snapped to on the previous preview, unless
+    // that is the road the gesture started on (the end starts out there).
+    const previous = this.previewState
+    const latch =
+      previous?.endSnap && !this.sharesRoad(previous.endSnap.location, previous.check.from?.location)
+        ? previous.endSnap.location
+        : undefined
+    const check = checkPath(this.world, this.graph, from, pointer, this.samples.slice(1), this.options, latch)
     const to = check.to?.position ?? pointer
     return {
       from: check.from?.position ?? from,
@@ -185,6 +194,13 @@ export class ConstructionController {
       ...(check.to ? { endSnap: check.to } : {}),
       check,
     }
+  }
+
+  private sharesRoad(a: RoadLocation, b: RoadLocation | undefined): boolean {
+    if (!b) return false
+    const edges = (l: RoadLocation) => (l.kind === 'edge' ? [l.edge] : this.graph.edgesAt(l.node).map((e) => e.id))
+    const other = edges(b)
+    return edges(a).some((e) => other.includes(e))
   }
 
   private emit(): void {
