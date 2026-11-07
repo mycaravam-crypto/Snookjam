@@ -687,7 +687,7 @@ export class TrafficSim {
     return false
   }
 
-private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
+  private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
     const { position: p, heading: h } = this.lanePositionOf({ ...v, stepIndex, progress })
     const profile = VEHICLE_PROFILES[v.kind]
     const L = profile.length / 2 + this.geometry.safetyGap / 2
