@@ -28,6 +28,14 @@ describe('traffic density progression', () => {
     expect(s.world.settlements).toHaveLength(7)
     expect(s.world.portals).toHaveLength(6)
   })
+
+  it('builds a visible active fleet quickly instead of trickling in a few cars', () => {
+    const s = new GameSession({ seed: 42 })
+    s.start()
+    ticks(s, 10)
+    expect(s.snapshot().activeVehicles).toBeGreaterThan(30)
+    expect(s.snapshot().activeVehicleTarget).toBe(100)
+  })
 })
 
 describe('GameSession lifecycle', () => {
