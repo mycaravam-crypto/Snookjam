@@ -120,6 +120,28 @@ test.describe('critical player flow', () => {
     await expect(page.getByTestId('hud-time')).not.toContainText('0:00 /')
   })
 
+  test('keeps the live construction preview aligned with the latest pointer position', async ({ page }) => {
+    await play(page)
+    const target = { x: (road.from.x + road.to.x) / 2, y: (road.from.y + road.to.y) / 2 }
+    const start = await toScreen(page, road.from)
+    const middle = await toScreen(page, target)
+    const end = await toScreen(page, road.to)
+
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(middle.x, middle.y)
+    const preview = await page.evaluate(() => (window as any).__snookjam.construction.value.preview.pointer)
+    expect(preview.x).toBeCloseTo(target.x, 5)
+    expect(preview.y).toBeCloseTo(target.y, 5)
+
+    await page.mouse.move(end.x, end.y)
+    const latest = await page.evaluate(() => (window as any).__snookjam.construction.value.preview.pointer)
+    expect(latest.x).toBeCloseTo(road.to.x, 5)
+    expect(latest.y).toBeCloseTo(road.to.y, 5)
+    await page.mouse.up()
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+  })
+
   test('builds and clears congestion with pause controls', async ({ page }) => {
     await play(page)
     await fastForward(page, 5) // let traffic enter the map
