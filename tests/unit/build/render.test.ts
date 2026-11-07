@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { constructionOptions, ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
 import type { ConstructionContext } from '@game/index'
-import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH } from '@game/render/roadStyle'
+import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from '@game/render/roadStyle'
 import { asciiWorld, LOOP } from './fixtures'
 
 function recorder() {
@@ -59,5 +59,18 @@ describe('construction rendering', () => {
     const built = recorder()
     renderBuiltRoads(built.ctx, [{ id: 0, from: { x: 1, y: 1 }, to: { x: 1, y: 5 }, points: [{ x: 1, y: 1 }, { x: 1, y: 5 }] }], v)
     expect(built.calls.filter((c) => c.name === 'stroke').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('clears lane markings at crossings without adding patches to ordinary bends', () => {
+    const crossing = recorder()
+    strokeRoads(crossing.ctx, v, [
+      [{ x: 2, y: 4 }, { x: 8, y: 4 }],
+      [{ x: 5, y: 1 }, { x: 5, y: 7 }],
+    ])
+    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(1)
+
+    const bend = recorder()
+    strokeRoads(bend.ctx, v, [[{ x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 6 }]])
+    expect(bend.calls.filter((call) => call.name === 'arc')).toHaveLength(0)
   })
 })
