@@ -5,6 +5,7 @@ import { canBuild, createGameController } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
 import GameHud from './GameHud.vue'
 import GameOverlay from './GameOverlay.vue'
+import NetworkPanel from './NetworkPanel.vue'
 import WorldCanvas from './WorldCanvas.vue'
 
 const emit = defineEmits<{ quit: [] }>()
@@ -22,7 +23,15 @@ const sim = computed(() => {
   void snapshot.value
   return session.value.sim
 })
+const diagnostics = computed(() => {
+  void snapshot.value
+  return session.value.diagnostics
+})
 const interactive = computed(() => canBuild(snapshot.value.state))
+
+// Diagnostics are display-only toggles (#34): they never pause or alter the sim.
+const heatmap = ref(false)
+const showStats = ref(false)
 
 const HINT = 'Drag from a road to another road to build a connection.'
 const status = ref(HINT)
@@ -55,6 +64,10 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
     e.preventDefault()
     game.togglePause()
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'h' || e.key === 'H')) {
+    heatmap.value = !heatmap.value
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'i' || e.key === 'I')) {
+    showStats.value = !showStats.value
   }
 }
 
@@ -102,7 +115,15 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
 
 <template>
   <div class="shell" data-testid="game-shell">
-    <GameHud :snapshot="snapshot" @pause="game.pause()" @resume="game.resume()" />
+    <GameHud
+      :snapshot="snapshot"
+      :heatmap="heatmap"
+      :stats="showStats"
+      @pause="game.pause()"
+      @resume="game.resume()"
+      @toggle-heatmap="heatmap = !heatmap"
+      @toggle-stats="showStats = !showStats"
+    />
     <div class="stage">
       <WorldCanvas
         ref="canvas"
@@ -110,8 +131,11 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         :construction="construction"
         :traffic="sim"
         :interactive="interactive"
+        :diagnostics="diagnostics"
+        :heatmap="heatmap"
         @outcome="onOutcome"
       />
+      <NetworkPanel v-if="showStats" :stats="snapshot.network" :heatmap="heatmap" @close="showStats = false" />
       <p v-if="interactive" class="status" data-testid="build-status" role="status" aria-live="polite">{{ status }}</p>
       <GameOverlay
         :snapshot="snapshot"

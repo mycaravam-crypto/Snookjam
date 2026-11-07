@@ -20,6 +20,7 @@ import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from 
 import { FixedStepClock, TrafficSim } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
+import { NetworkMonitor, type NetworkStats } from '../diagnostics'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
@@ -54,12 +55,15 @@ export interface SessionSnapshot {
   readonly activeVehicles: number
   readonly pendingVehicles: number
   readonly vehiclesExited: number
+  /** Traffic diagnostics for the current level (#34). */
+  readonly network: NetworkStats
 }
 
 interface Level {
   readonly world: World
   readonly graph: RoadGraph
   readonly sim: TrafficSim
+  readonly diagnostics: NetworkMonitor
 }
 
 export class GameSession {
@@ -109,6 +113,11 @@ export class GameSession {
     return this.current.sim
   }
 
+  /** Read-only traffic diagnostics for the current level (#34). */
+  get diagnostics(): NetworkMonitor {
+    return this.current.diagnostics
+  }
+
   get congestion(): number {
     return this.congestionValue
   }
@@ -135,6 +144,7 @@ export class GameSession {
       activeVehicles: stats.active,
       pendingVehicles: stats.pendingSpawns,
       vehiclesExited: this.exitedInRun,
+      network: this.current.diagnostics.stats(),
     }
   }
 
@@ -199,6 +209,7 @@ export class GameSession {
     const sim = this.current.sim
     sim.setSpawnInterval(spawnIntervalAt(this.balance, this.levelNumber, this.levelTime))
     const report = sim.step(dt)
+    this.current.diagnostics.observe(dt)
     this.levelTime += dt
     this.exitedInRun += report.exited
 
@@ -255,7 +266,10 @@ export class GameSession {
    * split edges so nobody teleports.
    */
   applyConnection(result: ConnectResult): void {
-    for (const split of result.splits) this.current.sim.applySplit(split)
+    for (const split of result.splits) {
+      this.current.sim.applySplit(split)
+      this.current.diagnostics.applySplit(split)
+    }
   }
 
   /** Test hook: sets congestion directly (clamped). */
@@ -294,7 +308,8 @@ export class GameSession {
       junctionClearSec: this.balance.junctionClearSec,
       vehicleMix: vehicleMixFor(this.balance, level),
     })
-    return { world, graph, sim }
+    const diagnostics = new NetworkMonitor(graph, sim, { blockedAfterSec: this.balance.blockedAfterSec })
+    return { world, graph, sim, diagnostics }
   }
 
   private transition(to: SessionState): void {

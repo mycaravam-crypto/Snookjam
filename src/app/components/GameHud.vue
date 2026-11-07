@@ -3,8 +3,11 @@ import { computed } from 'vue'
 import type { SessionSnapshot } from '@game/index'
 import { formatTime } from '../format'
 
-const props = defineProps<{ snapshot: SessionSnapshot }>()
-defineEmits<{ pause: []; resume: [] }>()
+const props = withDefaults(defineProps<{ snapshot: SessionSnapshot; heatmap?: boolean; stats?: boolean }>(), {
+  heatmap: false,
+  stats: false,
+})
+defineEmits<{ pause: []; resume: []; toggleHeatmap: []; toggleStats: [] }>()
 
 const LEVEL_LABELS = { normal: 'Flowing', warning: 'Warning', critical: 'Critical' } as const
 const LEVEL_ICONS = { normal: '●', warning: '▲', critical: '‼' } as const
@@ -56,6 +59,29 @@ const canPause = computed(() => props.snapshot.state === 'running' || paused.val
         <div class="meter-mark" style="left: 50%" aria-hidden="true" />
         <div class="meter-mark" style="left: 80%" aria-hidden="true" />
       </div>
+    </div>
+
+    <div class="hud-tools">
+      <button
+        type="button"
+        class="hud-toggle"
+        data-testid="hud-heatmap"
+        title="Congestion heatmap (H)"
+        :aria-pressed="heatmap"
+        @click="$emit('toggleHeatmap')"
+      >
+        <span aria-hidden="true">▦</span> Heatmap
+      </button>
+      <button
+        type="button"
+        class="hud-toggle"
+        data-testid="hud-stats"
+        title="Traffic statistics (I)"
+        :aria-pressed="stats"
+        @click="$emit('toggleStats')"
+      >
+        <span aria-hidden="true">ⓘ</span> Stats
+      </button>
     </div>
 
     <button

@@ -54,4 +54,6 @@ export const COLORS = {
   vehicleStuck: '#e0402f',
   vehicleGlass: '#bfe3ff',
   vehicleLight: '#fff6c2',
+  heatBottleneck: '#ffffff',
+  heatBlocked: '#e0402f',
 }
