@@ -19,7 +19,6 @@ import {
 } from '../../src/game'
 
 const SEED = 77
-const WIDE_JOINS = constructionOptions({ minJoinAngle: Math.PI / 3 })
 const URL = `?seed=${SEED}&test`
 
 /**
