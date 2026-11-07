@@ -118,9 +118,9 @@ export class RoadEditor {
     for (const road of state.records) {
       if (!road || !Number.isInteger(road.id) || road.id < 1 || !Array.isArray(road.points) ||
         road.points.length < 2 || !['open', 'closing', 'removed'].includes(road.state) ||
-        road.points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new TypeError('invalid saved player road')
+        road.points.some((p: Point) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new TypeError('invalid saved player road')
       if (road.state !== 'removed' && this.graph.roadEdges(road.id).length === 0) throw new TypeError('saved player road is missing from graph')
-      this.records.set(road.id, { ...road, points: road.points.map((p) => ({ x: p.x, y: p.y })) })
+      this.records.set(road.id, { ...road, points: road.points.map((p: Point) => ({ x: p.x, y: p.y })) })
     }
     const validHistory = (entry: HistoryEntry) =>
       entry && (entry.kind === 'build' || entry.kind === 'remove') && this.records.has(entry.road)

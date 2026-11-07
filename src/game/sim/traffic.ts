@@ -188,6 +188,7 @@ export interface TrafficSimState {
   readonly totalExited: number
   readonly totalUnroutable: number
   readonly randomState: number
+  readonly lanes: readonly (readonly [string, readonly number[]])[]
   readonly vehicles: readonly {
     readonly id: number
     readonly kind: VehicleClass
@@ -454,6 +455,7 @@ export class TrafficSim {
       totalUnroutable: this.totalUnroutable,
       randomState,
       vehicles: [...this.fleet.values()].map((v) => ({ ...v, steps: v.steps.map((step) => ({ ...step })) })),
+      lanes: [...this.lanes].map(([key, lane]) => [key, lane.map((vehicle) => vehicle.id)] as const),
       junctionFreeAt: [...this.junctionFreeAt],
       junctionHolder: [...this.junctionHolder],
       arrivals: [...this.arrivals].map(([id, arrival]) => [id, { ...arrival }] as const),
@@ -472,7 +474,7 @@ export class TrafficSim {
       !Number.isInteger(state.totalSpawned) || state.totalSpawned < 0 ||
       !Number.isInteger(state.totalExited) || state.totalExited < 0 ||
       !Number.isInteger(state.totalUnroutable) || state.totalUnroutable < 0 ||
-      !Number.isInteger(state.randomState) || !Array.isArray(state.vehicles)) {
+      !Number.isInteger(state.randomState) || !Array.isArray(state.vehicles) || !Array.isArray(state.lanes)) {
       throw new TypeError('invalid traffic simulation save data')
     }
     if (!this.random.setState) throw new Error('traffic random source cannot restore state')
@@ -494,16 +496,24 @@ export class TrafficSim {
       }
       const current = raw.steps[raw.stepIndex]!
       if (raw.progress > this.graph.getEdge(current.edge)!.length + 1e-6) throw new TypeError('saved vehicle is outside its current road')
-      restored.set(raw.id, { ...raw, steps: raw.steps.map((step) => ({ ...step })), holding: raw.holding })
+      restored.set(raw.id, { ...raw, steps: raw.steps.map((step: RouteStep) => ({ ...step })), holding: raw.holding })
     }
     if (state.nextId <= Math.max(-1, ...restored.keys()) || state.pending > this.maxPendingSpawns) throw new TypeError('invalid traffic counters')
     this.fleet.clear()
     this.lanes.clear()
-    for (const v of restored.values()) {
-      this.fleet.set(v.id, v)
-      this.laneFor(v.steps[v.stepIndex]!).push(v)
+    for (const v of restored.values()) this.fleet.set(v.id, v)
+    const assigned = new Set<number>()
+    for (const [key, ids] of state.lanes) {
+      if (typeof key !== 'string' || !Array.isArray(ids) || ids.length === 0) throw new TypeError('invalid saved lane')
+      const lane = ids.map((id) => {
+        const vehicle = this.fleet.get(id)
+        if (!vehicle || assigned.has(id) || laneKey(vehicle.steps[vehicle.stepIndex]!) !== key) throw new TypeError('saved lane does not match vehicle positions')
+        assigned.add(id)
+        return vehicle
+      })
+      this.lanes.set(key, lane)
     }
-    for (const lane of this.lanes.values()) lane.sort((a, b) => b.progress - a.progress || a.id - b.id)
+    if (assigned.size !== this.fleet.size) throw new TypeError('saved lane assignments are incomplete')
     this.spawnInterval = Math.max(this.minSpawnIntervalSec, state.spawnInterval)
     this.spawnTimer = state.spawnTimer
     this.pending = state.pending
