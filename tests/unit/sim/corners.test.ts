@@ -36,7 +36,12 @@ describe('continuous corner driving', () => {
     for (let i = 0; i < 20 * 12; i++) {
       sim.step(DT)
       const vehicle = sim.vehicles()[0]
-      if (vehicle) speeds.push(vehicle.speed)
+      if (vehicle) {
+        speeds.push(vehicle.speed)
+        // Stop measuring after the turn and its exit acceleration, before
+        // the unrelated destination-portal braking phase.
+        if (vehicle.stepIndex === 1 && vehicle.progress > 1) break
+      }
     }
 
     const profile = VEHICLE_PROFILES.car
