@@ -455,7 +455,12 @@ export class TrafficSim {
     if (dot > 1 - 1e-9) return 0
     const lenIn = this.graph.getEdge(inStep.edge)!.length
     const lenOut = this.graph.getEdge(outStep.edge)!.length
-    return Math.min(this.geometry.cornerRadius, lenIn / 2, lenOut / 2)
+    // Sharp turns need a wider transition so opposing lane curves do not
+    // collapse into one another at the miter.
+    const miterReach = laneOffset(this.geometry) / Math.max(0.1, Math.cos(Math.acos(dot) / 2))
+    const clearance = this.geometry.vehicleWidth / 2 + this.geometry.safetyGap
+    const radius = Math.max(this.geometry.cornerRadius, miterReach + clearance)
+    return Math.min(radius, lenIn / 2, lenOut / 2)
   }
 
   /**
@@ -501,7 +506,11 @@ export class TrafficSim {
       const radius = this.cornerRadiusAt(step, next)
       if (radius > 0) {
         const distanceToCurve = Math.max(0, length - radius - v.progress)
-        const curveSpeed = Math.sqrt(7 * radius) * profile.speedFactor
+        const a = this.direction(step)
+        const b = this.direction(next)
+        const turn = Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y)))
+        const effectiveRadius = radius / Math.max(0.25, Math.tan(turn / 2))
+        const curveSpeed = Math.sqrt(7 * effectiveRadius) * profile.speedFactor
         limit = Math.min(limit, Math.sqrt(curveSpeed * curveSpeed + 2 * profile.decel * distanceToCurve))
       }
     }
@@ -510,7 +519,11 @@ export class TrafficSim {
     if (previous) {
       const radius = this.cornerRadiusAt(previous, step)
       if (radius > 0 && v.progress < radius) {
-        limit = Math.min(limit, Math.sqrt(2.5 * radius) * profile.speedFactor)
+        const a = this.direction(previous)
+        const b = this.direction(step)
+        const turn = Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y)))
+        const effectiveRadius = radius / Math.max(0.25, Math.tan(turn / 2))
+        limit = Math.min(limit, Math.sqrt(7 * effectiveRadius) * profile.speedFactor)
       }
     }
     return limit
@@ -951,10 +964,6 @@ export class TrafficSim {
     const current = v.steps[v.stepIndex]!
     const node = current.to
     if (node === v.destination && v.stepIndex === v.steps.length - 1) {
-      if (v.holding !== undefined) {
-        const clearSec = this.clearSecFor(v.holding)
-        if (clearSec > 0) this.junctionFreeAt.set(v.holding, this.time + clearSec)
-      }
       this.removeVehicle(v, current)
       return 'exited'
     }
@@ -991,12 +1000,6 @@ export class TrafficSim {
     if (!this.hasRoomAhead(v)) {
       v.state = 'waiting'
       return 'held'
-    }
-    // Start clearance when the vehicle actually crosses the junction, not
-    // when it reserves the box while still approaching it.
-    if (key !== undefined && v.holding === key) {
-      const clearSec = this.clearSecFor(key)
-      if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
     }
     const lane = this.lanes.get(laneKey(current))!
     lane.splice(lane.indexOf(v), 1)
@@ -1413,11 +1416,14 @@ export class TrafficSim {
       if (inside(v) !== 0 && this.lightAt(v.steps[v.stepIndex]!) !== undefined && this.lightAt(v.steps[v.stepIndex]!) !== 'green') continue
       const exiting = v.stepIndex + 1 >= v.steps.length
       if (exiting) {
-        // Reserve the portal box, then start its clearance interval when the
-        // vehicle actually leaves the map in advanceAtJunction().
+        // Leaving the map through this tunnel: nothing to make room for.
         this.junctionHolder.set(key, v.id)
         v.holding = key
         this.arrivals.delete(v.id)
+        {
+          const clearSec = this.clearSecFor(key)
+          if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+        }
         continue
       }
       if (!this.remainingValid(v)) continue
@@ -1431,6 +1437,10 @@ export class TrafficSim {
       this.junctionHolder.set(key, v.id)
       v.holding = key
       this.arrivals.delete(v.id)
+      {
+        const clearSec = this.clearSecFor(key)
+        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+      }
     }
   }
 
