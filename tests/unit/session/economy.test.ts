@@ -60,17 +60,17 @@ const busyPlus = (seed = 1) =>
   })
 
 describe('rewards', () => {
-  it('pays coins and points per vehicle through', () => {
-    expect(exitReward(DEFAULT_ECONOMY, 3)).toEqual({ coins: 3, points: 30 })
+  it('pays coins per vehicle through', () => {
+    expect(exitReward(DEFAULT_ECONOMY, 3)).toEqual({ coins: 3 })
   })
 
-  it('pays a bigger level bonus on later levels and calmer roads', () => {
+  it('pays a bigger level bonus on later levels, calmer roads and objectives met', () => {
     const calm = levelReward(DEFAULT_ECONOMY, 1, 0)
     const busy = levelReward(DEFAULT_ECONOMY, 1, 90)
     const later = levelReward(DEFAULT_ECONOMY, 3, 0)
     expect(calm.coins).toBeGreaterThan(busy.coins)
     expect(later.coins).toBeGreaterThan(calm.coins)
-    expect(calm.points).toBe(calm.coins * DEFAULT_ECONOMY.pointsPerBonusCoin)
+    expect(levelReward(DEFAULT_ECONOMY, 1, 0, 100, 2).coins).toBe(calm.coins + 2 * DEFAULT_ECONOMY.coinsPerObjective)
   })
 
   it('rejects invalid tuning and lists both shop items', () => {
@@ -111,7 +111,7 @@ describe('roundabouts in the simulation', () => {
 describe('the shop in a game session', () => {
   const lit = (s: GameSession) => s.sim.junctions().find((j) => s.sim.isSignalJunction(j))!
 
-  it('earns coins and score as vehicles get through', () => {
+  it('earns coins as vehicles get through, alongside the #35 score', () => {
     const s = new GameSession({ seed: 42 })
     s.start()
     const before = s.snapshot()
@@ -120,7 +120,7 @@ describe('the shop in a game session', () => {
     const after = s.snapshot()
     expect(after.vehiclesExited).toBeGreaterThan(0)
     expect(after.coins - before.coins).toBe(after.vehiclesExited * DEFAULT_ECONOMY.coinsPerExit)
-    expect(after.score).toBe(after.vehiclesExited * DEFAULT_ECONOMY.pointsPerExit)
+    expect(after.score).toBeGreaterThan(0)
   })
 
   it('buys into the inventory, places from it and refunds on removal', () => {
@@ -158,6 +158,6 @@ describe('the shop in a game session', () => {
     expect(s.snapshot()).toMatchObject({ inventory: { signal: 1 }, placed: { signal: 0 }, levelReward: undefined })
     expect(s.sim.signals()).toHaveLength(0)
     s.restart()
-    expect(s.snapshot()).toMatchObject({ score: 0, coins: DEFAULT_ECONOMY.startingCoins, inventory: { signal: 0, roundabout: 0 } })
+    expect(s.snapshot()).toMatchObject({ coins: DEFAULT_ECONOMY.startingCoins, inventory: { signal: 0, roundabout: 0 } })
   })
 })

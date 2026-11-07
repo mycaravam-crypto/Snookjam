@@ -47,6 +47,7 @@ src/
     sim/         Traffic simulation and fixed-step clock
     session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
+    diagnostics/ Read-only traffic statistics, road heat and blocked junctions
     build/       Road construction: freehand path geometry, validation and the
                  drag-to-build controller
     render/      Canvas 2D drawing through an injected context
@@ -61,6 +62,14 @@ or the app layer.
 ## Controls
 
 - **Start:** press **Play** on the title screen. The run starts immediately.
+- **Modes (#35):** **Play** is the classic game: survive each level's timer
+  below 100% congestion. **Objectives** adds goals per level (complete N
+  journeys, keep throughput up, keep the average wait down), shown with
+  progress bars under the HUD; every goal must be met when the timer runs
+  out, or the run ends. Score is 10 points per completed journey plus 50 per
+  objective met, with no hidden bonuses. **Sandbox** has no timer, no
+  objectives and no gridlock loss. Objective data, the scoring rule and the
+  balancing notes are in `src/game/session/objectives.ts`.
 - **Pause / resume:** the Pause button in the top bar, or <kbd>P</kbd> / <kbd>Esc</kbd>.
   The game also pauses when the tab is hidden. You can still build while paused.
 - **HUD:** level, time survived out of the level target, active cars, and the
@@ -70,6 +79,14 @@ or the app layer.
   the map at least 15% larger, the map is drawn rotated (world north points
   right). This is display-only: the map, seeds and rules are unchanged, and
   pointer input is converted back to world coordinates.
+- **Traffic diagnostics (#34):** **Heatmap** (or <kbd>H</kbd>) tints roads
+  by how full their queues are, from pale yellow to red. Persistent bottlenecks
+  get a dashed white border and blocked junctions a red ring with a ×.
+  **Stats** (or <kbd>I</kbd>) opens a panel with completed journeys,
+  throughput, average trip and waiting time, vehicles on the map and waiting
+  now, and counts of bottlenecks and blocked junctions. Both are display-only:
+  they never pause or change the simulation. Metric definitions are in
+  `src/game/diagnostics/network.ts`.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
 - **Build a road:** press on an existing road, draw the road along any path
@@ -98,6 +115,17 @@ or the app layer.
 - **Roundabouts:** pick the **Roundabout** tool and tap a junction where three
   or more roads meet (dashed rings mark them). Tap a roundabout to select it
   and remove it. With none in stock the status line points you to the shop.
+- **Removing roads (#33):** with the **Remove** tool, tap a road you built and
+  press **Remove road**. Generated roads cannot be removed. An empty road goes
+  at once; a road with cars on it closes first (red-and-white stripes: no
+  new traffic uses it, cars on it drive off) and goes once it is empty.
+- **Undo / redo (#33):** the ↶ and ↷ buttons next to the tools, or
+  <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> and
+  <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (or
+  <kbd>Ctrl</kbd>+<kbd>Y</kbd>). Undo covers building and removing roads in
+  the current level, up to 50 steps. Undoing a road restores the network
+  exactly as it was before it; undoing while a road is still closing simply
+  reopens it.
 - The drawn trajectory is resampled, smoothed to remove jitter and simplified
   into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
   graph node.
@@ -139,22 +167,30 @@ lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
   an occupied junction or a full exit. Each light head shows red, amber and
   green lamps in the usual order with only the lit one bright.
 - Vehicles about to turn at a junction blink their indicators on that side.
+- Player roads are recorded by their drawn centre line, and every graph edge
+  of a road carries its id (`RoadEdge.road`, kept through later splits).
+  Removing one (`RoadGraph.removeEdges`) also merges back any road it had
+  split, and `TrafficSim.applyRemoval` / `applyMerge` move vehicles on merged
+  halves without moving them in the world. Rebuilding replays the centre line
+  through `RoadGraph.connect` (`src/game/session/roadEditor.ts`).
 - A new road can put a junction box around vehicles already standing there.
   Until they have cleared it, only they may claim it (those on roads inside
   the box first), and each only goes once its path through the box clears
-  the others.
+  the others. Vehicles already touching when that happens may separate by
+  driving on.
 
-## Score, coins and the shop
+## Coins and the shop
 
-Success pays (`src/game/session/economy.ts`, tuning in `DEFAULT_ECONOMY`):
+Score is #35's (journeys and objectives, see below). Coins are the spendable
+value earned from the same successes, in every mode
+(`src/game/session/economy.ts`, tuning in `DEFAULT_ECONOMY`):
 
-- Every vehicle that reaches its tunnel scores 10 points and pays 1 coin.
-- Finishing a level pays a bonus of 15 + 5 × level coins, plus up to 20
-  more the lower the congestion meter is at the end (10 points per bonus
-  coin). The level-complete screen shows the bonus; game over shows the
-  final score.
-- The run starts with 20 coins. Score only goes up; coins are spent in the
-  shop. Restarting resets score, coins and stock.
+- Every vehicle that reaches its tunnel pays 1 coin.
+- Finishing a level pays 15 + 5 × level coins, 10 more per objective met,
+  and up to 20 more the lower the congestion meter is at the end. The
+  level-complete screen shows the bonus.
+- The run starts with 20 coins, shown in the HUD and on the Shop button.
+  Restarting resets coins and stock.
 - Items still on the map when a level ends go back into stock for the next
   map.
 - Junction upgrades shorten how long a junction box stays closed after each

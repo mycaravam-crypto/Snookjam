@@ -3,15 +3,22 @@ import {
   ConstructionController,
   GameSession,
   type ConstructionTarget,
+  type EditResult,
   type NodeId,
+  type GameMode,
   type Point,
   type SessionSnapshot,
   type SessionState,
   type ShopItemId,
 } from '@game/index'
 
-/** What pointer input on the map does: build roads, place traffic lights (#32) or roundabouts. */
-export type Tool = 'road' | 'signal' | 'roundabout'
+/** What pointer input on the map does: build roads, place traffic lights (#32) or roundabouts, or remove roads (#33). */
+export type Tool = 'road' | 'signal' | 'roundabout' | 'remove'
+
+/** How far (tiles) from a player road a tap still selects it. */
+export const ROAD_TAP_DISTANCE = 0.8
+
+export type RoadTapResult = 'selected' | 'generated' | 'none' | 'unavailable'
 
 /** How far (tiles) from a junction's centre a tap still selects it. */
 export const SIGNAL_TAP_DISTANCE = 1.6
@@ -53,26 +60,34 @@ export interface GameController {
   removeSelectedRoundabout(): void
   /** Buys one shop item; returns whether it was bought. */
   buy(item: ShopItemId): boolean
+  /** Id of the player road selected for removal, if any (#33). */
+  readonly selectedRoad: ShallowRef<number | undefined>
+  /** Selects the player road at `point` (with the remove tool). */
+  tapRoad(point: Point): RoadTapResult
+  removeSelectedRoad(): EditResult | undefined
+  undo(): EditResult | undefined
+  redo(): EditResult | undefined
   start(): void
   pause(): void
   resume(): void
   togglePause(): void
   restart(): void
   nextLevel(): void
-  /** Replaces the run with a new seed and starts it. */
+  /** Replaces the run with a new seed (same mode) and starts it. */
   newGame(seed: number | string): void
   /** Advances real time (seconds) and refreshes the snapshot. */
   frame(elapsedSec: number): void
   dispose(): void
 }
 
-export function createGameController(seed: number | string): GameController {
-  const session = shallowRef(new GameSession({ seed }))
+export function createGameController(seed: number | string, mode: GameMode = 'classic'): GameController {
+  const session = shallowRef(new GameSession({ seed, mode }))
   const snapshot = shallowRef(session.value.snapshot())
   const construction = shallowRef(makeConstruction(session.value))
   const tool = shallowRef<Tool>('road')
   const selectedSignal = shallowRef<NodeId | undefined>(undefined)
   const selectedRoundabout = shallowRef<NodeId | undefined>(undefined)
+  const selectedRoad = shallowRef<number | undefined>(undefined)
   let unsubscribe = bind(session.value)
 
   function makeConstruction(s: GameSession): ConstructionController {
@@ -88,6 +103,7 @@ export function createGameController(seed: number | string): GameController {
         construction.value = makeConstruction(s)
         selectedSignal.value = undefined
         selectedRoundabout.value = undefined
+        selectedRoad.value = undefined
       }
       if (!canBuild(event.to)) construction.value.cancel()
       snapshot.value = s.snapshot()
@@ -115,7 +131,42 @@ export function createGameController(seed: number | string): GameController {
       construction.value.cancel()
       selectedSignal.value = undefined
       selectedRoundabout.value = undefined
+      selectedRoad.value = undefined
       tool.value = next
+    },
+    selectedRoad,
+    tapRoad(point) {
+      const s = session.value
+      if (!canBuild(s.state)) return 'unavailable'
+      const road = s.roadAt(point, ROAD_TAP_DISTANCE)
+      selectedRoad.value = road?.state === 'open' ? road.id : undefined
+      if (road) return 'selected'
+      // Generated roads cannot be removed; say so rather than ignoring the tap.
+      return s.graph.nearestLocation(point, ROAD_TAP_DISTANCE) ? 'generated' : 'none'
+    },
+    removeSelectedRoad() {
+      const id = selectedRoad.value
+      if (id === undefined || !canBuild(session.value.state)) return undefined
+      const result = session.value.removeRoad(id)
+      selectedRoad.value = undefined
+      refresh()
+      return result
+    },
+    undo() {
+      if (!canBuild(session.value.state)) return undefined
+      construction.value.cancel()
+      selectedRoad.value = undefined
+      const result = session.value.undo()
+      refresh()
+      return result
+    },
+    redo() {
+      if (!canBuild(session.value.state)) return undefined
+      construction.value.cancel()
+      selectedRoad.value = undefined
+      const result = session.value.redo()
+      refresh()
+      return result
     },
     tapSignal(point) {
       const s = session.value
@@ -188,10 +239,11 @@ export function createGameController(seed: number | string): GameController {
     nextLevel: act((s) => s.nextLevel()),
     newGame(nextSeed) {
       unsubscribe()
-      session.value = new GameSession({ seed: nextSeed })
+      session.value = new GameSession({ seed: nextSeed, mode })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
       selectedRoundabout.value = undefined
+      selectedRoad.value = undefined
       unsubscribe = bind(session.value)
       session.value.start()
       snapshot.value = session.value.snapshot()

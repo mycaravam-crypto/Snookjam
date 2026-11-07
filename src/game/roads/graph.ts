@@ -38,12 +38,15 @@ export interface RoadEdge {
   readonly capacity: number
   /** A blocked edge exists but cannot be routed through. */
   readonly blocked: boolean
+  /** Player road this edge belongs to (#33); undefined for generated roads. Kept through splits. */
+  readonly road?: number
 }
 
 export interface EdgeOptions {
   speedLimit?: number
   capacity?: number
   blocked?: boolean
+  road?: number
 }
 
 /** A point on the network: either a node, or a fraction `t` along an edge. */
@@ -81,6 +84,8 @@ export class RoadGraph {
   private nextNodeId = 0
   private nextEdgeId = 0
   private versionCounter = 0
+  /** Nodes created by splitting an edge; removing roads may merge them away again (#33). */
+  private readonly splitNodes = new Set<NodeId>()
 
   /** Increments on every topology or attribute change. */
   get version(): number {
@@ -152,6 +157,7 @@ export class RoadGraph {
       speedLimit,
       capacity,
       blocked: options.blocked ?? false,
+      ...(options.road === undefined ? {} : { road: options.road }),
     })
     this.edgeMap.set(edge.id, edge)
     this.incidence.get(a)!.push(edge.id)
@@ -251,8 +257,9 @@ export class RoadGraph {
     const position = this.positionOf({ kind: 'edge', edge: edge.id, t })
     this.removeEdge(edge.id)
     const node = this.addNode(position)
-    // Capacity is re-derived from the new lengths; speed and blocking carry over.
-    const options = { speedLimit: edge.speedLimit, blocked: edge.blocked }
+    this.splitNodes.add(node.id)
+    // Capacity is re-derived from the new lengths; speed, blocking and road carry over.
+    const options = { speedLimit: edge.speedLimit, blocked: edge.blocked, road: edge.road }
     const toA = this.addEdge(edge.a, node.id, options)
     const toB = this.addEdge(node.id, edge.b, options)
     return {
@@ -367,6 +374,7 @@ export class RoadGraph {
     clone.nextNodeId = this.nextNodeId
     clone.nextEdgeId = this.nextEdgeId
     clone.versionCounter = this.versionCounter
+    for (const n of this.splitNodes) clone.splitNodes.add(n)
     return clone
   }
 
@@ -380,6 +388,80 @@ export class RoadGraph {
     this.nextNodeId = source.nextNodeId
     this.nextEdgeId = source.nextEdgeId
     this.versionCounter = source.versionCounter
+    this.splitNodes.clear()
+    for (const n of source.splitNodes) this.splitNodes.add(n)
+  }
+
+  /** Edges of player road `road` (#33), in id order. */
+  roadEdges(road: number): RoadEdge[] {
+    return [...this.edgeMap.values()].filter((e) => e.road === road)
+  }
+
+  /**
+   * Removes edges atomically (#33): the edges go, nodes left without any road
+   * go, and where removing them leaves a node that only exists because an
+   * earlier road split a straight edge there, the two halves merge back into
+   * one edge, so undoing a road restores the network it was built on. Merge
+   * records let callers migrate references, like EdgeSplit for splits.
+   */
+  removeEdges(ids: readonly EdgeId[]): RemovalResult {
+    for (const id of ids) this.requireEdge(id)
+    const working = this.cloneGraph()
+    const result = working.removeEdgesMutable(ids)
+    this.copyFrom(working)
+    return result
+  }
+
+  private removeEdgesMutable(ids: readonly EdgeId[]): RemovalResult {
+    const touched = new Set<NodeId>()
+    for (const id of new Set(ids)) {
+      const edge = this.requireEdge(id)
+      touched.add(edge.a)
+      touched.add(edge.b)
+      this.removeEdge(id)
+    }
+    const removedNodes: NodeId[] = []
+    const merges: EdgeMerge[] = []
+    for (const n of [...touched].sort((x, y) => x - y)) {
+      const edges = this.incidence.get(n)!
+      if (edges.length === 0) {
+        this.nodeMap.delete(n)
+        this.incidence.delete(n)
+        this.splitNodes.delete(n)
+        removedNodes.push(n)
+        this.versionCounter++
+        continue
+      }
+      if (edges.length !== 2 || !this.splitNodes.has(n)) continue
+      const [first, second] = edges.map((id) => this.requireEdge(id)) as [RoadEdge, RoadEdge]
+      if (first.road !== second.road || first.speedLimit !== second.speedLimit || first.blocked !== second.blocked) continue
+      const a = this.otherEnd(first, n)
+      const b = this.otherEnd(second, n)
+      if (a === b || this.edgeBetween(a, b)) continue
+      // Only straight-through splits merge back; a bend stays a node.
+      const pa = this.requireNode(a).position, pn = this.requireNode(n).position, pb = this.requireNode(b).position
+      const cross = (pn.x - pa.x) * (pb.y - pn.y) - (pn.y - pa.y) * (pb.x - pn.x)
+      const dot = (pn.x - pa.x) * (pb.x - pn.x) + (pn.y - pa.y) * (pb.y - pn.y)
+      if (Math.abs(cross) > 1e-6 * (first.length + second.length) || dot <= 0) continue
+      this.removeEdge(first.id)
+      this.removeEdge(second.id)
+      this.nodeMap.delete(n)
+      this.incidence.delete(n)
+      this.splitNodes.delete(n)
+      removedNodes.push(n)
+      const merged = this.addEdge(a, b, { speedLimit: first.speedLimit, blocked: first.blocked, road: first.road })
+      merges.push({
+        node: n,
+        a,
+        b,
+        fromA: first.id,
+        fromB: second.id,
+        merged: merged.id,
+        fromALength: first.length,
+        fromBLength: second.length,
+      })
+    }
+    return { removedEdges: [...new Set(ids)], removedNodes, merges }
   }
 
   /**
@@ -615,6 +697,31 @@ export interface EdgeSplit {
   readonly towardALength: number
   /** Length of `towardB`, i.e. the junction's distance from `b`. */
   readonly towardBLength: number
+}
+
+/** Two edges meeting at a split node merged back into one (#33); the inverse of EdgeSplit. */
+export interface EdgeMerge {
+  /** The removed node between the halves. */
+  readonly node: NodeId
+  /** Far end of `fromA`. */
+  readonly a: NodeId
+  /** Far end of `fromB`. */
+  readonly b: NodeId
+  /** Retired edge between `a` and `node`. */
+  readonly fromA: EdgeId
+  /** Retired edge between `node` and `b`. */
+  readonly fromB: EdgeId
+  /** New edge from `a` to `b`. */
+  readonly merged: EdgeId
+  readonly fromALength: number
+  readonly fromBLength: number
+}
+
+export interface RemovalResult {
+  readonly removedEdges: readonly EdgeId[]
+  readonly removedNodes: readonly NodeId[]
+  /** In the order they were applied. */
+  readonly merges: readonly EdgeMerge[]
 }
 
 export interface ConnectResult {

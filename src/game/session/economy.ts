@@ -1,10 +1,11 @@
 /**
- * Score, coins and the shop.
+ * Coins and the shop.
  *
- * Success earns both: every vehicle that reaches its tunnel scores points and
- * pays coins, and finishing a level pays a bonus that grows with the level
- * and with how calm the roads were (low congestion at the end). Score only
- * goes up; coins are spent in the shop on junction upgrades. Bought items go
+ * Score is #35's (objectives.ts); coins are the spendable value earned from
+ * the same successes: every vehicle that reaches its tunnel pays coins, and
+ * finishing a level pays a bonus that grows with the level, with each
+ * objective met and with how calm the roads were (low congestion at the
+ * end). Coins are spent in the shop on junction upgrades. Bought items go
  * into an inventory: placing one uses it, removing it gives it back, and
  * items still on the map return to the inventory when the next level loads a
  * new map. Pure functions over plain data, so the session stays testable.
@@ -24,14 +25,14 @@ export interface EconomyConfig {
   readonly startingCoins: number
   /** Coins per vehicle that leaves the map. */
   readonly coinsPerExit: number
-  /** Score per vehicle that leaves the map. */
-  readonly pointsPerExit: number
-  /** Level-complete coins: base + perLevel × level, plus up to calmBonus at 0% congestion. */
+  /**
+   * Level-complete coins: base + perLevel × level + perObjective × objectives
+   * met, plus up to calmBonus at 0% congestion.
+   */
   readonly levelBonusCoins: number
   readonly levelBonusCoinsPerLevel: number
+  readonly coinsPerObjective: number
   readonly calmBonusCoins: number
-  /** Score per coin of level bonus. */
-  readonly pointsPerBonusCoin: number
   readonly signalPrice: number
   readonly roundaboutPrice: number
 }
@@ -39,11 +40,10 @@ export interface EconomyConfig {
 export const DEFAULT_ECONOMY: EconomyConfig = Object.freeze({
   startingCoins: 20,
   coinsPerExit: 1,
-  pointsPerExit: 10,
   levelBonusCoins: 15,
   levelBonusCoinsPerLevel: 5,
+  coinsPerObjective: 10,
   calmBonusCoins: 20,
-  pointsPerBonusCoin: 10,
   signalPrice: 15,
   roundaboutPrice: 40,
 })
@@ -79,19 +79,26 @@ export function priceOf(economy: EconomyConfig, item: ShopItemId): number {
 
 export interface Reward {
   readonly coins: number
-  readonly points: number
 }
 
 /** Reward for `exited` vehicles reaching their tunnel. */
 export function exitReward(economy: EconomyConfig, exited: number): Reward {
-  return { coins: exited * economy.coinsPerExit, points: exited * economy.pointsPerExit }
+  return { coins: exited * economy.coinsPerExit }
 }
 
-/** Reward for completing `level` with `congestion` (0–100) on the meter. */
-export function levelReward(economy: EconomyConfig, level: number, congestion: number, limit = 100): Reward {
+/**
+ * Reward for completing `level` with `congestion` (0–100) on the meter and
+ * `objectivesMet` objectives met (always all of them: missing one ends the run).
+ */
+export function levelReward(economy: EconomyConfig, level: number, congestion: number, limit = 100, objectivesMet = 0): Reward {
   const calm = 1 - Math.min(1, Math.max(0, congestion / limit))
-  const coins = Math.round(economy.levelBonusCoins + economy.levelBonusCoinsPerLevel * level + economy.calmBonusCoins * calm)
-  return { coins, points: coins * economy.pointsPerBonusCoin }
+  const coins = Math.round(
+    economy.levelBonusCoins +
+      economy.levelBonusCoinsPerLevel * level +
+      economy.coinsPerObjective * objectivesMet +
+      economy.calmBonusCoins * calm,
+  )
+  return { coins }
 }
 
 export type Inventory = Readonly<Record<ShopItemId, number>>

@@ -20,6 +20,7 @@ import type { ConnectResult, EdgeOptions, NodeId, Point, RoadGraph, RoadLocation
 import { FixedStepClock, TrafficSim, type SignalOptions } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
+import { NetworkMonitor, type NetworkStats } from '../diagnostics'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
 import {
   createEconomy,
@@ -32,22 +33,37 @@ import {
   type Reward,
   type ShopItemId,
 } from './economy'
+import { RoadEditor, type EditResult, type PlayerRoad } from './roadEditor'
+import { evaluateObjectives, levelScore, objectivesFor, type GameMode, type ObjectiveDef, type ObjectiveProgress } from './objectives'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
 
 export type SessionEvent =
   | { readonly type: 'stateChange'; readonly from: SessionState; readonly to: SessionState }
   | { readonly type: 'levelComplete'; readonly level: number; readonly reward: Reward }
-  | { readonly type: 'gameOver'; readonly level: number; readonly levelTime: number; readonly totalTime: number }
+  | {
+      readonly type: 'gameOver'
+      readonly level: number
+      readonly levelTime: number
+      readonly totalTime: number
+      readonly reason: EndReason
+    }
+
+/** Why a run ended: gridlock, or objectives missed when the timer ran out (#35). */
+export type EndReason = 'congestion' | 'objectives'
 
 export interface SessionOptions {
   readonly seed: number | string
   readonly balance?: Partial<BalanceConfig>
   readonly world?: Partial<WorldOptions>
-  /** Score, coin and shop tuning. */
+  /** Coin and shop tuning. */
   readonly economy?: Partial<EconomyConfig>
   /** Fixed simulation rate; defaults to the game config (20 Hz). */
   readonly simulationHz?: number
+  /** Game mode (#35); defaults to 'classic'. */
+  readonly mode?: GameMode
+  /** Objectives per level for 'objectives' mode; defaults to LEVEL_OBJECTIVES. */
+  readonly objectives?: readonly (readonly ObjectiveDef[])[]
 }
 
 /** Read-only view of the session for the HUD (#8). */
@@ -67,15 +83,24 @@ export interface SessionSnapshot {
   readonly activeVehicles: number
   readonly pendingVehicles: number
   readonly vehiclesExited: number
-  /** Points scored this run (vehicles through plus level bonuses). */
+  /** Traffic diagnostics for the current level (#34). */
+  readonly network: NetworkStats
+  readonly mode: GameMode
+  /** Objectives of the current level with live progress (empty outside 'objectives' mode). */
+  readonly objectives: readonly ObjectiveProgress[]
+  /** Points earned this level so far. */
+  readonly levelScore: number
+  /** Points across the run, including this level. */
   readonly score: number
+  /** Set once the run has ended. */
+  readonly endReason: EndReason | undefined
   /** Coins available to spend in the shop. */
   readonly coins: number
   /** Shop items owned but not placed. */
   readonly inventory: Inventory
   /** Shop items currently placed on this level's map. */
   readonly placed: Inventory
-  /** Bonus paid for the last completed level, while its overlay shows. */
+  /** Coins paid for the last completed level, while its overlay shows. */
   readonly levelReward: Reward | undefined
 }
 
@@ -83,6 +108,8 @@ interface Level {
   readonly world: World
   readonly graph: RoadGraph
   readonly sim: TrafficSim
+  readonly editor: RoadEditor
+  readonly diagnostics: NetworkMonitor
 }
 
 export class GameSession {
@@ -100,7 +127,13 @@ export class GameSession {
   private levelTime = 0
   private completedTime = 0
   private exitedInRun = 0
-  private scoreValue = 0
+  readonly mode: GameMode
+  private readonly objectiveTable: readonly (readonly ObjectiveDef[])[] | undefined
+  /** Score of the levels already completed this run. */
+  private completedScore = 0
+  /** Objective results frozen when the level timer ran out. */
+  private finalObjectives: ObjectiveProgress[] | undefined
+  private endReason: EndReason | undefined
   private coinsValue = 0
   private owned: Record<ShopItemId, number> = { ...EMPTY_INVENTORY }
   private onMap: Record<ShopItemId, number> = { ...EMPTY_INVENTORY }
@@ -116,6 +149,8 @@ export class GameSession {
       height: DEFAULT_CONFIG.mapHeight,
       ...options.world,
     }
+    this.mode = options.mode ?? 'classic'
+    this.objectiveTable = options.objectives
     this.clock = new FixedStepClock(options.simulationHz ?? DEFAULT_CONFIG.simulationHz)
     this.current = this.buildLevel(1)
   }
@@ -140,16 +175,17 @@ export class GameSession {
     return this.current.sim
   }
 
+  /** Read-only traffic diagnostics for the current level (#34). */
+  get diagnostics(): NetworkMonitor {
+    return this.current.diagnostics
+  }
+
   get congestion(): number {
     return this.congestionValue
   }
 
   get coins(): number {
     return this.coinsValue
-  }
-
-  get score(): number {
-    return this.scoreValue
   }
 
   /** Owned, unplaced count of a shop item. */
@@ -196,7 +232,12 @@ export class GameSession {
       activeVehicles: stats.active,
       pendingVehicles: stats.pendingSpawns,
       vehiclesExited: this.exitedInRun,
-      score: this.scoreValue,
+      network: this.current.diagnostics.stats(),
+      mode: this.mode,
+      objectives: this.objectiveProgress(),
+      levelScore: this.currentLevelScore(),
+      score: this.completedScore + this.currentLevelScore(),
+      endReason: this.endReason,
       coins: this.coinsValue,
       inventory: { ...this.owned },
       placed: { ...this.onMap },
@@ -229,7 +270,8 @@ export class GameSession {
     this.levelNumber = 1
     this.completedTime = 0
     this.exitedInRun = 0
-    this.scoreValue = 0
+    this.completedScore = 0
+    this.endReason = undefined
     this.coinsValue = this.economy.startingCoins
     this.owned = { ...EMPTY_INVENTORY }
     this.onMap = { ...EMPTY_INVENTORY }
@@ -242,6 +284,7 @@ export class GameSession {
   nextLevel(): boolean {
     if (this.stateValue !== 'levelComplete') return false
     this.completedTime += this.levelTime
+    this.completedScore += this.currentLevelScore()
     this.levelNumber++
     this.loadLevel(this.levelNumber)
     this.transition('running')
@@ -266,10 +309,14 @@ export class GameSession {
   /** Runs exactly one fixed step of `dt` seconds (for tests and tools). */
   tick(dt = this.clock.stepSec): void {
     if (this.stateValue !== 'running') return
-    if (this.congestionValue >= this.balance.congestionLimit) return this.endRun()
+    const sandbox = this.mode === 'sandbox'
+    if (!sandbox && this.congestionValue >= this.balance.congestionLimit) return this.endRun('congestion')
     const sim = this.current.sim
     sim.setSpawnInterval(spawnIntervalAt(this.balance, this.levelNumber, this.levelTime))
     const report = sim.step(dt)
+    this.current.diagnostics.observe(dt)
+    // Closing roads (#33) disappear once the last vehicle has left them.
+    this.current.editor.update()
     this.levelTime += dt
     this.exitedInRun += report.exited
     if (report.exited > 0) this.earn(exitReward(this.economy, report.exited))
@@ -284,14 +331,21 @@ export class GameSession {
       dt,
     )
 
+    if (sandbox) return // no timer and no gridlock loss
     if (this.congestionValue >= this.balance.congestionLimit) {
-      this.endRun()
+      this.endRun('congestion')
     } else if (this.levelTime >= this.balance.levelDurationSec - 1e-9) {
-      const reward = levelReward(this.economy, this.levelNumber, this.congestionValue, this.balance.congestionLimit)
-      this.earn(reward)
-      this.lastReward = reward
-      this.transition('levelComplete')
-      this.emit({ type: 'levelComplete', level: this.levelNumber, reward })
+      const results = evaluateObjectives(this.levelObjectives(), this.current.diagnostics.stats(), true)
+      this.finalObjectives = results
+      if (results.every((o) => o.status === 'met')) {
+        const reward = levelReward(this.economy, this.levelNumber, this.congestionValue, this.balance.congestionLimit, results.length)
+        this.earn(reward)
+        this.lastReward = reward
+        this.transition('levelComplete')
+        this.emit({ type: 'levelComplete', level: this.levelNumber, reward })
+      } else {
+        this.endRun('objectives')
+      }
     }
   }
 
@@ -309,9 +363,7 @@ export class GameSession {
     if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
-    const result = this.current.graph.connect(from, to, options, via)
-    this.applyConnection(result)
-    return result
+    return this.current.editor.build(from, to, via, options)
   }
 
   /** Adds a road ending on open terrain and migrates traffic on a split start edge. */
@@ -319,9 +371,55 @@ export class GameSession {
     if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
-    const result = this.current.graph.connectToPoint(from, point, options, via)
-    this.applyConnection(result)
-    return result
+    return this.current.editor.build(from, point, via, options)
+  }
+
+  /** Player-built roads on the map, open or closing (#33). */
+  roads(): readonly PlayerRoad[] {
+    return this.current.editor.roads()
+  }
+
+  /** Changes whenever the drawn player roads change. */
+  get roadsVersion(): number {
+    return this.current.editor.version
+  }
+
+  /** The player road nearest to `point`, within `maxDistance` tiles. */
+  roadAt(point: Point, maxDistance: number): PlayerRoad | undefined {
+    return this.current.editor.roadAt(point, maxDistance)
+  }
+
+  /** Whether vehicles are driving on a player road (removing it would close it first). */
+  isRoadOccupied(id: number): boolean {
+    return this.current.editor.isOccupied(id)
+  }
+
+  /**
+   * Removes a player road (#33). An empty road goes at once; a road with
+   * vehicles on it closes (no new traffic) and goes once they have left.
+   */
+  removeRoad(id: number): EditResult {
+    this.requireBuildable('remove roads')
+    return this.current.editor.remove(id)
+  }
+
+  get canUndo(): boolean {
+    return this.current.editor.canUndo
+  }
+
+  get canRedo(): boolean {
+    return this.current.editor.canRedo
+  }
+
+  /** Undoes the last road build or removal in this level. */
+  undo(): EditResult {
+    this.requireBuildable('undo')
+    return this.current.editor.undo()
+  }
+
+  redo(): EditResult {
+    this.requireBuildable('redo')
+    return this.current.editor.redo()
   }
 
   /**
@@ -330,7 +428,10 @@ export class GameSession {
    * split edges so nobody teleports.
    */
   applyConnection(result: ConnectResult): void {
-    for (const split of result.splits) this.current.sim.applySplit(split)
+    for (const split of result.splits) {
+      this.current.sim.applySplit(split)
+      this.current.diagnostics.applySplit(split)
+    }
   }
 
   /**
@@ -390,7 +491,6 @@ export class GameSession {
 
   private earn(reward: Reward): void {
     this.coinsValue += reward.coins
-    this.scoreValue += reward.points
   }
 
   private requireBuildable(action: string): void {
@@ -404,13 +504,30 @@ export class GameSession {
     this.congestionValue = Math.min(this.balance.congestionLimit, Math.max(0, value))
   }
 
-  private endRun(): void {
+  /** Objectives of the current level (empty outside 'objectives' mode). */
+  levelObjectives(): readonly ObjectiveDef[] {
+    return objectivesFor(this.mode, this.levelNumber, this.objectiveTable)
+  }
+
+  private objectiveProgress(): readonly ObjectiveProgress[] {
+    return this.finalObjectives ?? evaluateObjectives(this.levelObjectives(), this.current.diagnostics.stats(), false)
+  }
+
+  /** Journeys so far plus objectives met once the level has been judged. */
+  private currentLevelScore(): number {
+    const met = this.finalObjectives?.filter((o) => o.status === 'met').length ?? 0
+    return levelScore(this.current.diagnostics.stats().completedJourneys, met)
+  }
+
+  private endRun(reason: EndReason): void {
+    this.endReason = reason
     this.transition('gameOver')
     this.emit({
       type: 'gameOver',
       level: this.levelNumber,
       levelTime: this.levelTime,
       totalTime: this.completedTime + this.levelTime,
+      reason,
     })
   }
 
@@ -423,6 +540,7 @@ export class GameSession {
     this.current = this.buildLevel(level)
     this.congestionValue = 0
     this.levelTime = 0
+    this.finalObjectives = undefined
     this.clock.reset()
   }
 
@@ -442,7 +560,20 @@ export class GameSession {
       signalClearFactor: this.balance.signalClearFactor,
       vehicleMix: vehicleMixFor(this.balance, level),
     })
-    return { world, graph, sim }
+    const diagnostics = new NetworkMonitor(graph, sim, { blockedAfterSec: this.balance.blockedAfterSec })
+    const editor = new RoadEditor(graph, sim, {
+      connected: (result) => {
+        for (const split of result.splits) {
+          sim.applySplit(split)
+          diagnostics.applySplit(split)
+        }
+      },
+      removed: (result) => {
+        sim.applyRemoval(result)
+        diagnostics.applyRemoval(result)
+      },
+    })
+    return { world, graph, sim, diagnostics, editor }
   }
 
   private transition(to: SessionState): void {
