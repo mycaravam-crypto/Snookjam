@@ -724,6 +724,136 @@ kbd {
   line-height: 1;
 }
 
+/* Shop and inventory */
+.tool-count {
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+
+.coin {
+  color: var(--gold);
+}
+
+.tools .tool-shop {
+  --btn-bg: #3b3210;
+  --btn-fg: #ffe9a3;
+}
+
+.shop-panel {
+  position: absolute;
+  top: 72px;
+  left: 12px;
+  width: min(340px, calc(100% - 24px));
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #10190cf2;
+  border: 2px solid #ffffff26;
+  box-shadow: 0 6px 18px #00000066;
+  z-index: 2;
+}
+
+.shop-panel header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shop-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.shop-coins {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.shop-panel button {
+  --btn-bg: var(--panel-2);
+  --btn-fg: var(--fg);
+  --btn-edge: #0a1208;
+  border: 1px solid var(--border);
+  padding: 0.35em 0.9em;
+  min-height: 40px;
+}
+
+.shop-panel .shop-close {
+  padding: 0.2em 0.6em;
+}
+
+.shop-hint {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.shop-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.shop-panel li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #ffffff0d;
+}
+
+.shop-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+  flex: 1;
+}
+
+.shop-item-text strong {
+  font-size: 0.95rem;
+}
+
+.shop-owned {
+  color: var(--muted);
+}
+
+.shop-panel .shop-buy {
+  --btn-bg: var(--accent);
+  --btn-fg: var(--accent-fg);
+  --btn-edge: var(--accent-deep);
+  white-space: nowrap;
+}
+
+.shop-panel .shop-buy .coin {
+  color: #6b4a00;
+}
+
+.shop-panel .shop-buy:disabled {
+  --btn-bg: var(--panel-2);
+  --btn-fg: var(--muted);
+  --btn-edge: #0a1208;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.shop-panel .shop-buy:disabled .coin {
+  color: var(--gold);
+}
+
+@media (max-width: 560px) {
+  /* A bottom sheet above the status line, clear of the wrapped toolbar. */
+  .shop-panel {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 52px);
+  }
+}
+
 /* Overlays */
 .overlay {
   position: absolute;

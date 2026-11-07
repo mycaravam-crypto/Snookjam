@@ -25,6 +25,10 @@ export interface BalanceConfig {
   readonly maxVehiclesPerLevel: number
   /** Seconds an intersection stays occupied after each crossing vehicle. */
   readonly junctionClearSec: number
+  /** Roundabout clear time as a share of junctionClearSec (shop item). */
+  readonly roundaboutClearFactor: number
+  /** Clear time at a junction with traffic lights as a share of junctionClearSec. */
+  readonly signalClearFactor: number
   readonly vehicleMix: VehicleMix
   readonly vansPerLevel: number
   readonly trucksPerLevel: number
@@ -68,6 +72,12 @@ export const DEFAULT_BALANCE: BalanceConfig = Object.freeze({
   maxVehicles: DEFAULT_CONFIG.maxVehicles,
   maxVehiclesPerLevel: 10,
   junctionClearSec: 1.8,
+  // Shop upgrades shorten the box's clear time. Measured on generated maps
+  // under heavy traffic, roundabouts on every junction carry ~1.8× the cars.
+  // Lights carry ~25% more on a busy crossroads with 15 s greens, but their
+  // idle phases make them a net loss on quiet or three-way junctions.
+  roundaboutClearFactor: 0.35,
+  signalClearFactor: 0.5,
   vehicleMix: Object.freeze({ car: 1, van: 0, truck: 0 }),
   vansPerLevel: 0.015,
   trucksPerLevel: 0.008,

@@ -5,6 +5,7 @@ import {
   FONT_FAMILY,
   fitViewport,
   renderConstructionPreview,
+  renderRoundabouts,
   renderRoadEdits,
   renderHeatmap,
   renderSignals,
@@ -38,11 +39,14 @@ const props = withDefaults(
     heatmap?: boolean
     /**
      * 'road' drags build roads; 'signal' taps place or select traffic lights
-     * (#32); 'remove' taps select player roads (#33).
+     * (#32); 'roundabout' taps place or select roundabouts; 'remove' taps
+     * select player roads (#33).
      */
-    tool?: 'road' | 'signal' | 'remove'
+    tool?: 'road' | 'signal' | 'roundabout' | 'remove'
     /** Node of the selected traffic lights, if any. */
     selectedSignal?: NodeId
+    /** Node of the selected roundabout, if any. */
+    selectedRoundabout?: NodeId
     /** Player-built roads to draw (open and closing), and a version that changes with them. */
     roads?: readonly PlayerRoad[]
     roadsVersion?: number
@@ -57,6 +61,7 @@ const props = withDefaults(
     heatmap: false,
     tool: 'road',
     selectedSignal: undefined,
+    selectedRoundabout: undefined,
     roads: () => [],
     roadsVersion: 0,
     selectedRoad: undefined,
@@ -143,6 +148,10 @@ function draw(): void {
   renderRoadEdits(ctx, props.roads, viewport, props.tool === 'remove' ? props.selectedRoad : undefined)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
   if (props.traffic) {
+    renderRoundabouts(ctx, props.traffic, viewport, {
+      selected: props.selectedRoundabout,
+      showCandidates: props.tool === 'roundabout' && props.interactive,
+    })
     renderVehicles(ctx, props.traffic, viewport)
     renderSignals(ctx, props.traffic, viewport, { selected: props.selectedSignal, showCandidates: props.tool === 'signal' && props.interactive })
   }
@@ -271,7 +280,7 @@ watch(
   },
 )
 watch(
-  () => [props.tool, props.selectedSignal, props.selectedRoad, props.roadsVersion] as const,
+  () => [props.tool, props.selectedSignal, props.selectedRoundabout, props.selectedRoad, props.roadsVersion] as const,
   () => {
     tapStart = undefined
     if (canvas.value) canvas.value.style.cursor = props.tool === 'road' ? 'default' : 'pointer'
@@ -294,7 +303,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="tool === 'remove' ? `Map of seed ${world.seed}. Tap a road you built to select it for removal.` : tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
+    :aria-label="tool === 'remove' ? `Map of seed ${world.seed}. Tap a road you built to select it for removal.` : tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : tool === 'roundabout' ? `Map of seed ${world.seed}. Tap a junction to build or edit a roundabout.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

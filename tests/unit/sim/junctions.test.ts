@@ -277,6 +277,8 @@ describe('signals through the game session (#32)', () => {
     const junction = session.sim.junctions().find((j) => session.sim.isSignalJunction(j))!
     expect(() => session.placeSignal(junction.key)).toThrow(/ready/)
     session.start()
+    expect(session.placeSignal(junction.key, { greenSec: 5 })).toBe(false) // none in stock yet
+    expect(session.buy('signal')).toBe(true)
     expect(session.placeSignal(junction.key, { greenSec: 5 })).toBe(true)
     expect(session.sim.signals()).toHaveLength(1)
     session.pause()

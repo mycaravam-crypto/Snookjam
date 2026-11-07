@@ -25,7 +25,7 @@ export function renderSignals(ctx: RenderContext, sim: TrafficSim, v: Viewport, 
   const s = v.scale
   ctx.save()
   if (options.showCandidates) {
-    const signalled = new Set(sim.signals().map((view) => view.junction.key))
+    const signalled = new Set([...sim.signals().map((view) => view.junction.key), ...sim.roundabouts().map((j) => j.key)])
     ctx.setLineDash([Math.max(2, s * 0.15), Math.max(2, s * 0.12)])
     ctx.lineWidth = Math.max(1.5, s * 0.06)
     ctx.strokeStyle = COLORS.signalCandidate

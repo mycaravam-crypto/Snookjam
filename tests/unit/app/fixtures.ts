@@ -20,6 +20,10 @@ export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     levelScore: 0,
     score: 400,
     endReason: undefined,
+    coins: 34,
+    inventory: { signal: 1, roundabout: 0 },
+    placed: { signal: 0, roundabout: 1 },
+    levelReward: undefined,
     ...overrides,
   }
 }

@@ -53,7 +53,10 @@ watch(
           </li>
         </ul>
         <p v-if="scored" data-testid="overlay-score">Level score {{ snapshot.levelScore }} · Total {{ snapshot.score }}</p>
-        <p>The next level has a new map and heavier traffic.</p>
+        <p v-if="snapshot.levelReward" class="overlay-reward" data-testid="overlay-reward">
+          Level bonus: <strong>+{{ snapshot.levelReward.coins }} coins</strong> for the shop
+        </p>
+        <p>The next level has a new map and heavier traffic. Lights and roundabouts you placed go back into your stock.</p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-next" @click="$emit('nextLevel')">
             Continue to level {{ snapshot.level + 1 }}

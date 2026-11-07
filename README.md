@@ -107,6 +107,14 @@ or the app layer.
   Dashed rings mark the junctions that can take lights. The first tap adds
   lights; tapping lit junctions selects them. The panel sets the green time
   (5, 10 or 15 s) or removes the lights. Works with mouse and touch.
+- **Shop:** the **Shop** button (top left, with your coin balance) opens
+  the shop. Buy **traffic lights** (15 coins) or a **roundabout** (40
+  coins); bought items go into your stock, shown on the **Lights ×n** and
+  **Roundabout ×n** tool buttons. Placing one uses it up; removing it puts it
+  back in stock. A junction takes either lights or a roundabout, not both.
+- **Roundabouts:** pick the **Roundabout** tool and tap a junction where three
+  or more roads meet (dashed rings mark them). Tap a roundabout to select it
+  and remove it. With none in stock the status line points you to the shop.
 - **Removing roads (#33):** with the **Remove** tool, tap a road you built and
   press **Remove road**. Generated roads cannot be removed. An empty road goes
   at once; a road with cars on it closes first (red-and-white stripes: no
@@ -170,6 +178,28 @@ lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
   the box first), and each only goes once its path through the box clears
   the others. Vehicles already touching when that happens may separate by
   driving on.
+
+## Coins and the shop
+
+Score is #35's (journeys and objectives, see below). Coins are the spendable
+value earned from the same successes, in every mode
+(`src/game/session/economy.ts`, tuning in `DEFAULT_ECONOMY`):
+
+- Every vehicle that reaches its tunnel pays 1 coin.
+- Finishing a level pays 15 + 5 × level coins, 10 more per objective met,
+  and up to 20 more the lower the congestion meter is at the end. The
+  level-complete screen shows the bonus.
+- The run starts with 20 coins, shown in the HUD and on the Shop button.
+  Restarting resets coins and stock.
+- Items still on the map when a level ends go back into stock for the next
+  map.
+- Junction upgrades shorten how long a junction box stays closed after each
+  vehicle (`junctionClearSec`): a roundabout to 35% (`roundaboutClearFactor`)
+  and traffic lights to 50% for the green approach (`signalClearFactor`).
+  Under heavy traffic on generated maps, roundabouts on every junction
+  carried about 1.8× the vehicles. Lights carried about 25% more on a busy
+  crossroads with 15 s greens, but their red and all-red time makes them a
+  net loss on quiet or three-way junctions, so place them with care.
 
 ## World and maps
 
