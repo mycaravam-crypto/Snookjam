@@ -109,7 +109,14 @@ export const VEHICLE_PROFILES: Readonly<Record<VehicleClass, VehicleProfile>> = 
  */
 export function nextSpeed(speed: number, cruise: number, room: number, accel: number, decel: number, dt: number): number {
   if (!(room > 0)) return 0
-  return Math.max(0, Math.min(speed + accel * dt, cruise, Math.sqrt(2 * decel * room), room / dt))
+  const hardLimit = Math.min(Math.sqrt(2 * decel * room), room / dt)
+  const target = Math.min(cruise, hardLimit)
+  // Respect comfortable acceleration in both directions. A newly lower
+  // cruise target must not instantaneously change velocity; only a physical
+  // stopping constraint may demand harder emergency braking.
+  const comfortableFloor = Math.max(0, speed - decel * dt)
+  const comfortableTarget = Math.max(comfortableFloor, Math.min(speed + accel * dt, target))
+  return Math.max(0, Math.min(comfortableTarget, hardLimit))
 }
 
 export type VehicleMix = Readonly<Record<VehicleClass, number>>
@@ -306,6 +313,8 @@ export class TrafficSim {
    * the box's exit) further from the node.
    */
   private stopDistances = new Map<string, number>()
+  /** Cached shortening of the lane curve relative to centre-line distance. */
+  private cornerCutbackCache = new Map<string, number>()
   private junctionsVersion = -1
   /** Junction key -> described junction (approaches, exits, movements). */
   private junctionInfo = new Map<NodeId, Junction>()
@@ -442,10 +451,38 @@ export class TrafficSim {
   private cornerRadiusAt(inStep: RouteStep, outStep: RouteStep): number {
     const a = this.direction(inStep)
     const b = this.direction(outStep)
-    if (a.x * b.x + a.y * b.y > 1 - 1e-9) return 0
+    const dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y))
+    if (dot > 1 - 1e-9) return 0
     const lenIn = this.graph.getEdge(inStep.edge)!.length
     const lenOut = this.graph.getEdge(outStep.edge)!.length
     return Math.min(this.geometry.cornerRadius, lenIn / 2, lenOut / 2)
+  }
+
+  /**
+   * The lane curve cuts inside the road-centre-line corner. Convert that
+   * shortcut into an equivalent distance reduction so following gaps remain
+   * safe while one vehicle is turning and the next is still approaching.
+   */
+  private cornerCutback(inStep: RouteStep, outStep: RouteStep): number {
+    const key = `${inStep.edge}>${inStep.from}|${outStep.edge}>${outStep.from}`
+    const cached = this.cornerCutbackCache.get(key)
+    if (cached !== undefined) return cached
+    const radius = this.cornerRadiusAt(inStep, outStep)
+    if (radius <= 0) {
+      this.cornerCutbackCache.set(key, 0)
+      return 0
+    }
+    let length = 0
+    let previous = this.corner(inStep, outStep, radius, 0).position
+    const samples = 16
+    for (let i = 1; i <= samples; i++) {
+      const point = this.corner(inStep, outStep, radius, i / samples).position
+      length += Math.hypot(point.x - previous.x, point.y - previous.y)
+      previous = point
+    }
+    const cutback = Math.max(0, 2 * radius - length)
+    this.cornerCutbackCache.set(key, cutback)
+    return cutback
   }
 
   /**
@@ -464,7 +501,7 @@ export class TrafficSim {
       const radius = this.cornerRadiusAt(step, next)
       if (radius > 0) {
         const distanceToCurve = Math.max(0, length - radius - v.progress)
-        const curveSpeed = Math.sqrt(2.5 * radius) * profile.speedFactor
+        const curveSpeed = Math.sqrt(7 * radius) * profile.speedFactor
         limit = Math.min(limit, Math.sqrt(curveSpeed * curveSpeed + 2 * profile.decel * distanceToCurve))
       }
     }
@@ -914,6 +951,10 @@ export class TrafficSim {
     const current = v.steps[v.stepIndex]!
     const node = current.to
     if (node === v.destination && v.stepIndex === v.steps.length - 1) {
+      if (v.holding !== undefined) {
+        const clearSec = this.clearSecFor(v.holding)
+        if (clearSec > 0) this.junctionFreeAt.set(v.holding, this.time + clearSec)
+      }
       this.removeVehicle(v, current)
       return 'exited'
     }
@@ -950,6 +991,12 @@ export class TrafficSim {
     if (!this.hasRoomAhead(v)) {
       v.state = 'waiting'
       return 'held'
+    }
+    // Start clearance when the vehicle actually crosses the junction, not
+    // when it reserves the box while still approaching it.
+    if (key !== undefined && v.holding === key) {
+      const clearSec = this.clearSecFor(key)
+      if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
     }
     const lane = this.lanes.get(laneKey(current))!
     lane.splice(lane.indexOf(v), 1)
@@ -1074,6 +1121,7 @@ export class TrafficSim {
   private refreshJunctions(): void {
     if (this.junctionsVersion === this.graph.version) return
     this.junctionsVersion = this.graph.version
+    this.cornerCutbackCache.clear()
     const degree = (n: NodeId) => this.graph.edgesAt(n).length
     const parent = new Map<NodeId, NodeId>()
     const find = (n: NodeId): NodeId => {
@@ -1220,6 +1268,8 @@ export class TrafficSim {
     let dist = 0
     for (let k = fromIndex; k < v.steps.length && dist < cap; k++) {
       const step = v.steps[k]!
+      const previous = v.steps[k - 1]
+      if (previous) dist -= this.cornerCutback(previous, step)
       const lane = this.lanes.get(laneKey(step))
       const rear = lane?.[lane.length - 1]
       if (rear && rear !== v) return dist + rear.progress - this.followingGap(v, rear)
@@ -1384,10 +1434,6 @@ export class TrafficSim {
       this.junctionHolder.set(key, v.id)
       v.holding = key
       this.arrivals.delete(v.id)
-      {
-        const clearSec = this.clearSecFor(key)
-        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
-      }
     }
   }
 
