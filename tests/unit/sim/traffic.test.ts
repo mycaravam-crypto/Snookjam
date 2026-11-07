@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RoadGraph, type RoadLayout } from '../../../src/game/roads'
-import { FixedStepClock, TrafficSim, type RandomSource, type TrafficOptions } from '../../../src/game/sim'
+import { FixedStepClock, TrafficSim, vehicleFollowingGap, type RandomSource, type TrafficOptions } from '../../../src/game/sim'
+import { collisions } from './footprint'
 
 const DT = 1 / 20
 
@@ -367,5 +368,47 @@ describe('FixedStepClock', () => {
     expect(clock.advance(10)).toBe(5)
     expect(clock.alpha).toBe(0)
     expect(clock.advance(-1)).toBe(0)
+  })
+})
+
+
+describe('high-density traffic stress (#68)', () => {
+  it('keeps a mixed 80-vehicle fleet collision-free while traffic continues to flow', () => {
+    const { graph, portals } = crossroads()
+    const simulation = new TrafficSim(graph, {
+      portals,
+      random: rng(2026),
+      startingVehicles: 80,
+      maxVehicles: 100,
+      maxPendingSpawns: 100,
+      spawnIntervalSec: 0.8,
+      minSpawnIntervalSec: 0.8,
+      vehicleMix: { car: 0.7, van: 0.2, truck: 0.1 },
+    })
+
+    for (let tick = 0; tick < 600; tick++) {
+      simulation.step(DT)
+      if (tick % 5 !== 0) continue
+
+      expect(simulation.stats().active).toBeLessThanOrEqual(100)
+      expect(collisions(simulation), `vehicle footprint collision at tick ${tick}`).toEqual([])
+
+      for (const edge of graph.edges()) {
+        for (const from of [edge.a, edge.b]) {
+          const lane = simulation.laneOccupants(edge.id, from)
+          for (let i = 1; i < lane.length; i++) {
+            const leader = lane[i - 1]!
+            const follower = lane[i]!
+            expect(
+              leader.progress - follower.progress,
+              `following gap at tick ${tick}: ${follower.id} behind ${leader.id}`,
+            ).toBeGreaterThanOrEqual(vehicleFollowingGap(follower.kind, leader.kind) - 1e-6)
+          }
+        }
+      }
+    }
+
+    expect(simulation.stats().totalExited).toBeGreaterThan(0)
+    expect(simulation.stats().stuck).toBe(0)
   })
 })
