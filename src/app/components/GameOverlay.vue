@@ -34,7 +34,7 @@ watch(
         <p>Traffic is frozen. You can still build roads while paused.</p>
         <div class="overlay-actions">
           <button type="button" class="primary" data-testid="overlay-resume" @click="$emit('resume')">Resume</button>
-          <button type="button" data-testid="overlay-restart" @click="$emit('restart')">Restart level 1</button>
+          <button type="button" data-testid="overlay-restart" @click="$emit('restart')">Restart this level</button>
           <button type="button" data-testid="overlay-save" @click="$emit('save')">Save game</button>
           <button type="button" data-testid="overlay-load" :disabled="!hasSave" @click="$emit('load')">Load saved game</button>
           <button type="button" data-testid="overlay-new-map" @click="$emit('newMap')">New map</button>
@@ -84,7 +84,7 @@ watch(
         </p>
         <p v-if="scored" data-testid="overlay-score">Final score {{ snapshot.score }}</p>
         <div class="overlay-actions">
-          <button type="button" class="primary" data-testid="overlay-restart" @click="$emit('restart')">Try again</button>
+          <button type="button" class="primary" data-testid="overlay-restart" @click="$emit('restart')">Retry level {{ snapshot.level }}</button>
           <button type="button" data-testid="overlay-new-map" @click="$emit('newMap')">New map</button>
           <button type="button" data-testid="overlay-quit" @click="$emit('quit')">Quit to title</button>
         </div>
