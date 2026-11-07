@@ -16,13 +16,16 @@ function ticks(s: GameSession, seconds: number): void {
 }
 
 describe('traffic density progression', () => {
-  it('sets a busy starting fleet and scales targets up to 400 vehicles', () => {
-    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(targetVehiclesFor)).toEqual([
-      40, 70, 100, 150, 200, 250, 280, 310, 340, 370, 400,
+  it('starts with meaningful traffic and scales targets up to 500 vehicles', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map(targetVehiclesFor)).toEqual([
+      100, 150, 220, 300, 400, 500, 500, 500,
     ])
     const s = new GameSession({ seed: 42 })
-    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 40, activeVehicles: 0, pendingVehicles: 8 })
-    expect(s.sim.maxVehicles).toBe(40)
+    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 100, activeVehicles: 0, pendingVehicles: 24 })
+    expect(s.sim.maxVehicles).toBe(100)
+    expect(s.sim.spawnIntervalSec).toBeCloseTo(0.24)
+    expect(s.world.settlements).toHaveLength(7)
+    expect(s.world.portals).toHaveLength(6)
   })
 })
 
