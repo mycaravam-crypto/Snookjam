@@ -146,7 +146,7 @@ export function maxVehiclesFor(balance: BalanceConfig, level: number): number {
     balance.maxVehiclesPerLevel === DEFAULT_BALANCE.maxVehiclesPerLevel
   const target = usesDefaultCapacity
     ? targetVehiclesFor(level)
-    : Math.min(400, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
+    : Math.min(500, balance.maxVehicles + balance.maxVehiclesPerLevel * Math.max(0, level - 1))
   // Explicitly configured starting fleets (e.g. the 100-car performance
   // scenario) must always fit inside the active-vehicle limit.
   const requestedStartingFleet = balance.startingVehicles +
