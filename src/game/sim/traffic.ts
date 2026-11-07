@@ -633,29 +633,21 @@ export class TrafficSim {
   }
 
   /**
-   * Whether `v`, driving from where it is through box `key` until it would
-   * release the box, would touch another vehicle stranded in that box.
-   * Footprints are each class's rectangle in its lane, grown by the safety
-   * gap; the path is sampled every 0.05 tiles. Only used while a box has
-   * stranded vehicles, which is rare.
+   * Whether `v` would touch any other vehicle while traversing junction box
+   * `key` and clearing its exit. Check the entire approach and departure
+   * traffic, not only vehicles stranded inside the box: a turning vehicle's
+   * swept path can reach a queue before its nominal stop line, especially
+   * after a player-built sharp road changes the junction geometry.
+   *
+   * Vehicle footprints include the configured safety gap. Sampling every
+   * 0.05 tiles keeps the check conservative without depending on render rate.
    */
-  /**
-   * 0: stranded on a road inside a junction box; 1: stranded past a stop
-   * line a new road moved back; 2: not stranded (before its stop line, or
-   * not heading into a box).
-   */
-  private strandTier(v: MutableVehicle): number {
-    const step = v.steps[v.stepIndex]!
-    if (this.junctionKeys.get(step.to) === undefined) return 2
-    if (this.internalEdges.has(step.edge)) return 0
-    const edge = this.graph.getEdge(step.edge)!
-    return v.progress > edge.length - this.stopDistanceAt(step.edge, step.to) + 1e-6 ? 1 : 2
-  }
-
-  private sweepHitsStranded(v: MutableVehicle, key: NodeId, tier: (o: MutableVehicle) => number = (o) => this.strandTier(o)): boolean {
+  private sweepHitsStranded(v: MutableVehicle, key: NodeId): boolean {
     const others: Corner[][] = []
     for (const o of this.fleet.values()) {
-      if (o === v || o.holding !== undefined || this.junctionKeys.get(o.steps[o.stepIndex]!.to) !== key || tier(o) >= 2) continue
+      if (o === v || o.holding !== undefined) continue
+      const step = o.steps[o.stepIndex]!
+      if (this.junctionKeys.get(step.from) !== key && this.junctionKeys.get(step.to) !== key) continue
       others.push(this.footprintAt(o, o.stepIndex, o.progress))
     }
     // Two vehicles already touching (a new road merged their boxes around
