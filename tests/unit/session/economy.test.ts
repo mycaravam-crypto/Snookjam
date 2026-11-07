@@ -145,7 +145,7 @@ describe('the shop in a game session', () => {
     expect(s.snapshot()).toMatchObject({ inventory: { roundabout: 0 }, placed: { roundabout: 1 } })
   })
 
-  it('pays a level bonus and returns placed items on the next level; restart resets', () => {
+  it('pays a level bonus and preserves earned rewards and inventory when retrying', () => {
     const s = new GameSession({ seed: 9, balance: { levelDurationSec: 20 } })
     s.start()
     s.buy('signal')
@@ -157,7 +157,16 @@ describe('the shop in a game session', () => {
     expect(s.nextLevel()).toBe(true)
     expect(s.snapshot()).toMatchObject({ inventory: { signal: 1 }, placed: { signal: 0 }, levelReward: undefined })
     expect(s.sim.signals()).toHaveLength(0)
+    const beforeRetry = s.snapshot()
     s.restart()
-    expect(s.snapshot()).toMatchObject({ coins: DEFAULT_ECONOMY.startingCoins, inventory: { signal: 0, roundabout: 0 } })
+    expect(s.snapshot()).toMatchObject({
+      state: 'running',
+      level: 2,
+      levelTime: 0,
+      congestion: 0,
+      coins: beforeRetry.coins,
+      inventory: { signal: 1, roundabout: 0 },
+      placed: { signal: 0, roundabout: 0 },
+    })
   })
 })
