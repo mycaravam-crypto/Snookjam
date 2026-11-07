@@ -90,6 +90,17 @@ or the app layer.
   Dashed rings mark the junctions that can take lights. The first tap adds
   lights; tapping lit junctions selects them. The panel sets the green time
   (5, 10 or 15 s) or removes the lights. Works with mouse and touch.
+- **Removing roads (#33):** with the **Remove** tool, tap a road you built and
+  press **Remove road**. Generated roads cannot be removed. An empty road goes
+  at once; a road with cars on it closes first (red-and-white stripes: no
+  new traffic uses it, cars on it drive off) and goes once it is empty.
+- **Undo / redo (#33):** the ↶ and ↷ buttons next to the tools, or
+  <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> and
+  <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (or
+  <kbd>Ctrl</kbd>+<kbd>Y</kbd>). Undo covers building and removing roads in
+  the current level, up to 50 steps. Undoing a road restores the network
+  exactly as it was before it; undoing while a road is still closing simply
+  reopens it.
 - The drawn trajectory is resampled, smoothed to remove jitter and simplified
   into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
   graph node.
@@ -131,10 +142,17 @@ lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
   an occupied junction or a full exit. Each light head shows red, amber and
   green lamps in the usual order with only the lit one bright.
 - Vehicles about to turn at a junction blink their indicators on that side.
+- Player roads are recorded by their drawn centre line, and every graph edge
+  of a road carries its id (`RoadEdge.road`, kept through later splits).
+  Removing one (`RoadGraph.removeEdges`) also merges back any road it had
+  split, and `TrafficSim.applyRemoval` / `applyMerge` move vehicles on merged
+  halves without moving them in the world. Rebuilding replays the centre line
+  through `RoadGraph.connect` (`src/game/session/roadEditor.ts`).
 - A new road can put a junction box around vehicles already standing there.
   Until they have cleared it, only they may claim it (those on roads inside
   the box first), and each only goes once its path through the box clears
-  the others.
+  the others. Vehicles already touching when that happens may separate by
+  driving on.
 
 ## World and maps
 

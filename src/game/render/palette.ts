@@ -60,4 +60,7 @@ export const COLORS = {
   signal: { red: '#ff4b3a', amber: '#ffb020', green: '#3be36a' },
   signalSelected: '#ffffff',
   signalCandidate: '#ffffffb3',
+  editSelected: '#ffffff73',
+  editClosing: '#e0402f',
+  editClosingLight: '#ffffff',
 }

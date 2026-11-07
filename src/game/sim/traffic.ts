@@ -43,7 +43,18 @@
  */
 import { DEFAULT_CONFIG } from '../config'
 import { junctionStopDistance, laneOffset, minFollowingDistance, ROAD_GEOMETRY, validateRoadGeometry, type RoadGeometry } from './lanes'
-import { VEHICLE_SPACING, findRoute, type EdgeSplit, type Point, type NodeId, type RoadGraph, type RouteStep } from '../roads'
+import {
+  VEHICLE_SPACING,
+  findRoute,
+  type EdgeMerge,
+  type EdgeSplit,
+  type Point,
+  type NodeId,
+  type RemovalResult,
+  type RoadEdge,
+  type RoadGraph,
+  type RouteStep,
+} from '../roads'
 import {
   defaultPhases,
   describeJunction,
@@ -564,7 +575,13 @@ export class TrafficSim {
       if (o === v || o.holding !== undefined || this.junctionKeys.get(o.steps[o.stepIndex]!.to) !== key || tier(o) >= 2) continue
       others.push(this.footprintAt(o, o.stepIndex, o.progress))
     }
-    if (others.length === 0) return false
+    // Two vehicles already touching (a new road merged their boxes around
+    // both) can only separate by moving: that overlap is not this sweep's.
+    const start = this.footprintAt(v, v.stepIndex, v.progress)
+    const clearOfStart = others.filter((o) => !rectanglesOverlap(start, o))
+    if (clearOfStart.length === 0) return false
+    others.length = 0
+    others.push(...clearOfStart)
     let i = v.stepIndex
     let progress = v.progress
     for (let guard = 0; guard < 2000; guard++) {
@@ -848,12 +865,91 @@ export class TrafficSim {
     }
   }
 
+  /**
+   * Whether `edge` is closed to `v`. Blocked edges are closed, except that a
+   * vehicle already on a closing player road (#33) may drive on along that
+   * road's other blocked edges to leave it.
+   */
+  private closedTo(v: MutableVehicle, edge: RoadEdge): boolean {
+    if (!edge.blocked) return false
+    const current = this.graph.getEdge(v.steps[v.stepIndex]!.edge)
+    return !(current?.blocked && current.road !== undefined && current.road === edge.road)
+  }
+
+  /**
+   * Migrates vehicles after `RoadGraph.removeEdges` (#33). No vehicle may be
+   * on a removed edge (callers wait until the road is clear). Vehicles on
+   * two merged halves move onto the merged edge at the same world position;
+   * routes through removed edges are re-planned from the end of the current
+   * road (or left to stop there, `stuck`, if no route remains).
+   */
+  applyRemoval(result: RemovalResult): void {
+    for (const merge of result.merges) this.applyMerge(merge)
+    const removed = new Set(result.removedEdges)
+    for (const v of this.fleet.values()) {
+      if (removed.has(v.steps[v.stepIndex]!.edge)) throw new Error(`vehicle ${v.id} is on removed edge ${v.steps[v.stepIndex]!.edge}`)
+      // Forget the part of the route already driven if it used a removed edge.
+      if (v.steps.slice(0, v.stepIndex).some((s) => removed.has(s.edge))) {
+        v.steps = v.steps.slice(v.stepIndex)
+        v.stepIndex = 0
+      }
+      if (!v.steps.slice(v.stepIndex + 1).some((s) => removed.has(s.edge))) continue
+      const at = v.steps[v.stepIndex]!.to
+      const route = at === v.destination ? undefined : findRoute(this.graph, at, v.destination)
+      v.steps = [...v.steps.slice(0, v.stepIndex + 1), ...(route?.ok ? route.route.steps : [])]
+      v.routeVersion = this.graph.version
+      if (!route?.ok && at !== v.destination) v.failedVersion = this.graph.version
+    }
+  }
+
+  /** Inverse of applySplit: vehicles on either half move onto the merged edge in place. */
+  applyMerge(merge: EdgeMerge): void {
+    const { a, b, node, fromA, fromB, merged, fromALength, fromBLength } = merge
+    const isHalf = (s: RouteStep) => s.edge === fromA || s.edge === fromB
+    const towardB = (s: RouteStep) => (s.edge === fromA ? s.from === a : s.from === node)
+    for (const v of this.fleet.values()) {
+      const steps: RouteStep[] = []
+      let stepIndex = v.stepIndex
+      let progress = v.progress
+      for (let i = 0; i < v.steps.length; i++) {
+        const s = v.steps[i]!
+        if (!isHalf(s)) {
+          if (i === v.stepIndex) stepIndex = steps.length
+          steps.push(s)
+          continue
+        }
+        const forward = towardB(s)
+        const step: RouteStep = forward ? { edge: merged, from: a, to: b } : { edge: merged, from: b, to: a }
+        // Offset of this half's start along the merged step.
+        const offset = (forward ? s.edge === fromB : s.edge === fromA) ? (forward ? fromALength : fromBLength) : 0
+        const next = v.steps[i + 1]
+        const pairs = next !== undefined && isHalf(next) && towardB(next) === forward
+        if (i === v.stepIndex || (pairs && i + 1 === v.stepIndex)) {
+          stepIndex = steps.length
+          progress = i === v.stepIndex ? offset + v.progress : (forward ? fromALength : fromBLength) + v.progress
+        }
+        steps.push(step)
+        if (pairs) i++
+      }
+      v.steps = steps
+      v.stepIndex = stepIndex
+      v.progress = progress
+    }
+    for (const key of [`${fromA}>${a}`, `${fromA}>${node}`, `${fromB}>${node}`, `${fromB}>${b}`]) {
+      const lane = this.lanes.get(key)
+      if (!lane) continue
+      this.lanes.delete(key)
+      for (const v of lane) this.laneFor(v.steps[v.stepIndex]!).push(v)
+    }
+    for (const lane of this.lanes.values()) lane.sort((x, y) => y.progress - x.progress || x.id - y.id)
+  }
+
   private remainingValid(v: MutableVehicle): boolean {
     if (v.stepIndex + 1 >= v.steps.length) return false
     for (let i = v.stepIndex + 1; i < v.steps.length; i++) {
       const s = v.steps[i]!
       const edge = this.graph.getEdge(s.edge)
-      if (!edge || edge.blocked) return false
+      if (!edge || this.closedTo(v, edge)) return false
       if (!((edge.a === s.from && edge.b === s.to) || (edge.b === s.from && edge.a === s.to))) return false
     }
     return true
@@ -1042,7 +1138,7 @@ export class TrafficSim {
     if (v.state === 'stuck') return 0
     const next = v.steps[v.stepIndex + 1]!
     const edge = this.graph.getEdge(next.edge)
-    if (!edge || edge.blocked) return 0
+    if (!edge || this.closedTo(v, edge)) return 0
     const lane = this.lanes.get(laneKey(next))
     if (lane && lane.length >= edge.capacity) return 0
     return Math.max(0, limit - length)
@@ -1062,7 +1158,7 @@ export class TrafficSim {
   private hasRoomAhead(v: MutableVehicle): boolean {
     const next = v.steps[v.stepIndex + 1]!
     const edge = this.graph.getEdge(next.edge)
-    if (!edge || edge.blocked) return false
+    if (!edge || this.closedTo(v, edge)) return false
     const lane = this.lanes.get(laneKey(next))
     if (lane && lane.length >= edge.capacity) return false
     return this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) >= -1e-9
@@ -1164,7 +1260,7 @@ export class TrafficSim {
       const next = v.steps[v.stepIndex + 1]!
       const nextEdge = this.graph.getEdge(next.edge)
       const nextLane = this.lanes.get(laneKey(next))
-      if (!nextEdge || nextEdge.blocked || (nextLane && nextLane.length >= nextEdge.capacity)) continue
+      if (!nextEdge || this.closedTo(v, nextEdge) || (nextLane && nextLane.length >= nextEdge.capacity)) continue
       const clear = this.stopDistanceAt(next.edge, next.from)
       if (this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) < clear - 1e-9) continue
       this.junctionHolder.set(key, v.id)

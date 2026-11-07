@@ -21,6 +21,7 @@ import { FixedStepClock, TrafficSim, type SignalOptions } from '../sim'
 import { createRng, createRoadGraph, generateWorld, mixSeed, normalizeSeed, type World, type WorldOptions } from '../world'
 import { createBalance, maxVehiclesFor, spawnIntervalAt, startingVehiclesFor, vehicleMixFor, type BalanceConfig } from './balance'
 import { congestionLevel, nextCongestion, type CongestionLevel } from './congestion'
+import { RoadEditor, type EditResult, type PlayerRoad } from './roadEditor'
 
 export type SessionState = 'ready' | 'running' | 'paused' | 'levelComplete' | 'gameOver'
 
@@ -60,6 +61,7 @@ interface Level {
   readonly world: World
   readonly graph: RoadGraph
   readonly sim: TrafficSim
+  readonly editor: RoadEditor
 }
 
 export class GameSession {
@@ -199,6 +201,8 @@ export class GameSession {
     const sim = this.current.sim
     sim.setSpawnInterval(spawnIntervalAt(this.balance, this.levelNumber, this.levelTime))
     const report = sim.step(dt)
+    // Closing roads (#33) disappear once the last vehicle has left them.
+    this.current.editor.update()
     this.levelTime += dt
     this.exitedInRun += report.exited
 
@@ -234,9 +238,7 @@ export class GameSession {
     if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
-    const result = this.current.graph.connect(from, to, options, via)
-    this.applyConnection(result)
-    return result
+    return this.current.editor.build(from, to, via, options)
   }
 
   /** Adds a road ending on open terrain and migrates traffic on a split start edge. */
@@ -244,9 +246,55 @@ export class GameSession {
     if (this.stateValue !== 'running' && this.stateValue !== 'paused') {
       throw new Error(`cannot build roads while ${this.stateValue}`)
     }
-    const result = this.current.graph.connectToPoint(from, point, options, via)
-    this.applyConnection(result)
-    return result
+    return this.current.editor.build(from, point, via, options)
+  }
+
+  /** Player-built roads on the map, open or closing (#33). */
+  roads(): readonly PlayerRoad[] {
+    return this.current.editor.roads()
+  }
+
+  /** Changes whenever the drawn player roads change. */
+  get roadsVersion(): number {
+    return this.current.editor.version
+  }
+
+  /** The player road nearest to `point`, within `maxDistance` tiles. */
+  roadAt(point: Point, maxDistance: number): PlayerRoad | undefined {
+    return this.current.editor.roadAt(point, maxDistance)
+  }
+
+  /** Whether vehicles are driving on a player road (removing it would close it first). */
+  isRoadOccupied(id: number): boolean {
+    return this.current.editor.isOccupied(id)
+  }
+
+  /**
+   * Removes a player road (#33). An empty road goes at once; a road with
+   * vehicles on it closes (no new traffic) and goes once they have left.
+   */
+  removeRoad(id: number): EditResult {
+    this.requireBuildable('remove roads')
+    return this.current.editor.remove(id)
+  }
+
+  get canUndo(): boolean {
+    return this.current.editor.canUndo
+  }
+
+  get canRedo(): boolean {
+    return this.current.editor.canRedo
+  }
+
+  /** Undoes the last road build or removal in this level. */
+  undo(): EditResult {
+    this.requireBuildable('undo')
+    return this.current.editor.undo()
+  }
+
+  redo(): EditResult {
+    this.requireBuildable('redo')
+    return this.current.editor.redo()
   }
 
   /**
@@ -316,7 +364,7 @@ export class GameSession {
       junctionClearSec: this.balance.junctionClearSec,
       vehicleMix: vehicleMixFor(this.balance, level),
     })
-    return { world, graph, sim }
+    return { world, graph, sim, editor: new RoadEditor(graph, sim) }
   }
 
   private transition(to: SessionState): void {

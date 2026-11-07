@@ -511,6 +511,16 @@ kbd {
   --btn-edge: var(--accent-deep);
 }
 
+.tools-gap {
+  width: 6px;
+}
+
+.tools .tool-icon {
+  min-width: 40px;
+  padding: 0.35em 0.6em;
+  font-size: 1.15rem;
+}
+
 .signal-panel {
   right: 12px;
   flex-direction: column;
