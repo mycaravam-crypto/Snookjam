@@ -1,4 +1,4 @@
-import type { Point, World } from '../world/types'
+import type { Point, World, WorldTheme } from '../world/types'
 import { screenAngle, worldRectToScreen, worldToScreen, type Viewport } from '../world/viewport'
 import { mixSeed } from '../world/rng'
 import { COLORS, CITY_ROOF_COLORS, DESERT_ROOF_COLORS, FIELD_COLORS, FONT_FAMILY, ROOF_COLORS, THEME_TERRAIN_COLORS } from './palette'
@@ -212,7 +212,7 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
         if (world.road[i]) continue
         const { x, y } = worldRectToScreen(v, tx + dx, ty + dy, 1, 1)
         const inset = s * (0.16 + 0.08 * tileNoise(world, i, 4))
-        drawHouse(ctx, x + inset, y + inset, s - 2 * inset, pick(world.theme === 'city' ? CITY_ROOF_COLORS : world.theme === 'desert' ? DESERT_ROOF_COLORS : ROOF_COLORS, tileNoise(world, i, 16)))
+        drawHouse(ctx, x + inset, y + inset, s - 2 * inset, pick(world.theme === 'city' ? CITY_ROOF_COLORS : world.theme === 'desert' ? DESERT_ROOF_COLORS : ROOF_COLORS, tileNoise(world, i, 16)), world.theme)
       }
     }
     if (labels) {
@@ -233,9 +233,26 @@ function drawSettlements(ctx: RenderContext, world: World, v: Viewport, labels: 
 }
 
 /** A little house seen from the front and above: shadow, wall, pitched roof with a ridge and chimney. */
-function drawHouse(ctx: RenderContext, x: number, y: number, size: number, roof: string): void {
+function drawHouse(ctx: RenderContext, x: number, y: number, size: number, roof: string, theme: WorldTheme): void {
+  if (theme === 'city') {
+    const off = Math.max(1, size * 0.1)
+    ctx.fillStyle = COLORS.shadow
+    ctx.fillRect(x + off, y + off, size, size)
+    ctx.fillStyle = '#e2e5e4'
+    ctx.fillRect(x, y + size * 0.22, size, size * 0.78)
+    ctx.fillStyle = roof
+    ctx.fillRect(x - size * 0.04, y, size * 1.08, size * 0.28)
+    if (size >= 7) {
+      ctx.fillStyle = '#8fc4d5'
+      const windowSize = Math.max(1, size * 0.12)
+      for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) {
+        ctx.fillRect(x + size * (0.2 + col * 0.42), y + size * (0.42 + row * 0.28), windowSize, windowSize)
+      }
+    }
+    return
+  }
   const off = Math.max(1, size * 0.12)
-  const roofH = size * 0.62
+  const roofH = theme === 'desert' ? size * 0.35 : size * 0.62
   ctx.fillStyle = COLORS.shadow
   ctx.fillRect(x + off, y + off, size, size)
   // Wall with a darker strip at the base.
