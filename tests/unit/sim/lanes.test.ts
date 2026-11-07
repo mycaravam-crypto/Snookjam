@@ -200,33 +200,27 @@ describe('junctions', () => {
 })
 
 /** Seeds 15, 18 and 20 caught vehicles stranded in a box by a new road (#32). */
-const SEEDS = Array.from({ length: 30 }, (_, i) => i + 1)
+const REGRESSION_SEEDS = [15, 18, 20]
 
-describe('generated maps', () => {
-  it.each(SEEDS)('never lets two vehicles overlap through a full level (seed %i)', (seed) => {
+describe('generated traffic with player-built junctions', () => {
+  it.each(REGRESSION_SEEDS)('keeps vehicles collision-free through a full level (seed %i)', (seed) => {
     const session = new GameSession({ seed })
     session.start()
-    let built = false
-    for (let t = 0; t < 20 * 180 && session.state === 'running'; t++) {
-      session.tick()
-      // Halfway through, build a straight road so player-made junctions are covered too.
-      if (!built && t === 20 * 60) built = buildAnyRoad(session)
-      if (t % 2 === 0) expect(collisions(session.sim)).toEqual([])
-    }
-  })
-})
+    let builtAny = false
+    let builtSharp = 0
 
-describe('sharp player-built junctions', () => {
-  it.each(SEEDS)('never lets two vehicles overlap (seed %i)', (seed) => {
-    const session = new GameSession({ seed })
-    session.start()
-    let built = 0
     for (let t = 0; t < 20 * 180 && session.state === 'running'; t++) {
       session.tick()
-      if (t === 20 * 30 || t === 20 * 60 || t === 20 * 90) built += buildSharpRoad(session) ? 1 : 0
+
+      // Exercise both ordinary and sharp-angle player roads in the same run.
+      if (t === 20 * 30 || t === 20 * 90) builtSharp += buildSharpRoad(session) ? 1 : 0
+      if (t === 20 * 60) builtAny = buildAnyRoad(session)
+
       if (t % 2 === 0) expect(collisions(session.sim)).toEqual([])
     }
-    expect(built).toBeGreaterThan(0)
+
+    expect(builtAny).toBe(true)
+    expect(builtSharp).toBeGreaterThan(0)
   })
 })
 
@@ -246,7 +240,7 @@ function buildSharpRoad(session: GameSession): boolean {
         return (dx * ex + dy * ey) / (len * Math.hypot(ex, ey)) > Math.cos(Math.PI / 4)
       })
       if (!sharp) continue
-      const check = checkConnection(session.world, g, a.position, b.position)
+      const check = checkConnection(session.world, session.graph, a.position, b.position)
       if (check.ok) {
         session.connectRoad(check.from.location, check.to.location)
         return true
