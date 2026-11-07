@@ -249,6 +249,31 @@ describe('routing changes', () => {
     expect(s.stats().totalExited).toBe(1)
   })
 
+  it('recovers a stranded vehicle when a new alternate route is built', () => {
+    const g = corridor()
+    const s = new TrafficSim(g, { portals: [0, 2], random: { next: () => 0 }, startingVehicles: 1, spawnIntervalSec: 1000 })
+    s.step(DT)
+    g.setBlocked(1, true)
+    run(s, 60)
+    const vehicle = s.vehicles()[0]!
+    expect(vehicle.state).toBe('stuck')
+    expect(vehicle.progress).toBeCloseTo(4)
+
+    // The original route remains blocked; building a detour must be enough
+    // to recover the vehicle without requiring another movement transition.
+    g.addNode({ x: 6, y: 4 }, 3)
+    g.connect({ kind: 'node', node: 1 }, { kind: 'node', node: 3 })
+    g.connect({ kind: 'node', node: 3 }, { kind: 'node', node: 2 })
+    s.step(DT)
+
+    const recovered = s.getVehicle(vehicle.id)!
+    expect(recovered.state).not.toBe('stuck')
+    expect(recovered.steps.slice(recovered.stepIndex + 1).map((step) => step.to)).toEqual([3, 2])
+    run(s, 200)
+    expect(s.getVehicle(vehicle.id)).toBeUndefined()
+    expect(s.stats().totalExited).toBe(1)
+  })
+
   it('re-routes at the next road node to use a newly built shortcut', () => {
     // U-shaped road 0 → 1 → 2 → 3 → 4 → 5; a shortcut 1 — 4 is added later.
     const g = RoadGraph.fromLayout({
