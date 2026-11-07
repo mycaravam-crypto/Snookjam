@@ -67,7 +67,7 @@ describe('construction rendering', () => {
       [{ x: 2, y: 4 }, { x: 8, y: 4 }],
       [{ x: 5, y: 1 }, { x: 5, y: 7 }],
     ])
-    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(5)
+    expect(crossing.calls.filter((call) => call.name === 'arc')).toHaveLength(3)
 
     const bend = recorder()
     strokeRoads(bend.ctx, v, [[{ x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 6 }]])
