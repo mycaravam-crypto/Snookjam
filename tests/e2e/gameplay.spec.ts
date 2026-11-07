@@ -386,6 +386,7 @@ test.describe('road editing (#33)', () => {
     await page.getByTestId('undo').click()
     expect((await roadState(page)).roads).toEqual(['open'])
   })
+})
 
 test.describe('shop, coins and roundabouts', () => {
   test('S1. cars earn coins, the shop sells a roundabout and the tool builds it', async ({ page }) => {
