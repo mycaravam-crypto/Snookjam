@@ -356,8 +356,6 @@ describe('determinism and timing', () => {
     expect(play(30)).toEqual(at60)
     expect(play(144)).toEqual(at60)
   })
-
-
 })
 
 describe('FixedStepClock', () => {
