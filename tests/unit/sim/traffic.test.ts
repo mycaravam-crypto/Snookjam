@@ -204,18 +204,16 @@ describe('intersections', () => {
       ],
     })
     const s = new TrafficSim(g, { portals: [0, 2, 3], random: rng(5), startingVehicles: 12, spawnIntervalSec: 0.8, junctionClearSec: 2 })
-    const crossings: number[] = []
-    const onFirstEdge = new Map<number, number>()
+    const admissions: number[] = []
+    let previousHolder: number | undefined
     for (let i = 0; i < 1200; i++) {
       s.step(DT)
-      for (const v of s.vehicles()) {
-        const prev = onFirstEdge.get(v.id)
-        if (prev === 0 && v.stepIndex === 1) crossings.push(s.stats().time)
-        onFirstEdge.set(v.id, v.stepIndex)
-      }
+      const holder = s.junctionHolderAt(1)
+      if (holder !== undefined && holder !== previousHolder) admissions.push(s.stats().time)
+      if (holder !== undefined) previousHolder = holder
     }
-    expect(crossings.length).toBeGreaterThan(10)
-    for (let i = 1; i < crossings.length; i++) expect(crossings[i]! - crossings[i - 1]!).toBeGreaterThanOrEqual(2 - 1e-6)
+    expect(admissions.length).toBeGreaterThan(10)
+    for (let i = 1; i < admissions.length; i++) expect(admissions[i]! - admissions[i - 1]!).toBeGreaterThanOrEqual(2 - 1e-6)
   })
 
   it('does not limit bends (degree-2 nodes)', () => {
@@ -250,7 +248,7 @@ describe('routing changes', () => {
     expect(s.stats().totalExited).toBe(1)
   })
 
-  it('re-routes at the next junction to use a newly built shortcut', () => {
+  it('re-routes at the next road node to use a newly built shortcut', () => {
     // U-shaped road 0 → 1 → 2 → 3 → 4 → 5; a shortcut 1 — 4 is added later.
     const g = RoadGraph.fromLayout({
       nodes: [
@@ -277,7 +275,7 @@ describe('routing changes', () => {
     run(s, 30)
     expect(s.getVehicle(id)!.steps.map((x) => x.to)).toEqual([1, 4, 5])
     // 2 + 4 + 2 tiles at speed 2 ≈ 4 s; the original 28-tile route needs 14 s.
-    run(s, 55)
+    run(s, 75)
     expect(s.stats().totalExited).toBe(1)
   })
 

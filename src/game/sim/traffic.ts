@@ -22,17 +22,17 @@
  *   the gap ahead is at least `minGap`; otherwise it waits, which is how
  *   queues form.
  * - Intersections (nodes where three or more roads meet) have a stop line
- *   `stopDistance` before the node (further back where roads meet at a sharp
- *   angle, or at a bend sharper than a right angle, which also counts as a
- *   junction) and a junction box: one vehicle at a time
+ *   `stopDistance` before the node and a junction box: one vehicle at a time
  *   holds the box, from crossing its stop line until it is `stopDistance`
  *   past the node, and only enters when it has room to leave. Intersections
  *   joined by a road too short to stop between them share one box. A new vehicle
  *   may enter at most every `junctionClearSec`, so busy intersections become
- *   bottlenecks. Bends and dead ends (degree <= 2) have no such limit.
- * - Routes are re-planned only at junctions (never mid-edge), when the graph
- *   has changed since the route was planned. A vehicle with no route waits at
- *   its junction in the explicit `stuck` state until the graph changes.
+ *   bottlenecks. Degree-2 bends are continuous road: vehicles follow the
+ *   smoothed lane curve and reduce speed for its radius, but never reserve or
+ *   stop at a junction box. Dead ends also have no junction limit.
+ * - Routes are re-planned at the next road node (never mid-edge) when the
+ *   graph has changed since the route was planned. A vehicle with no route
+ *   waits at that node in the explicit `stuck` state until the graph changes.
  * - Spawns are queued as "pending" and released at a portal when its entry
  *   lane has room, so blocked tunnels build up incoming pressure instead of
  *   dropping traffic.
@@ -109,7 +109,14 @@ export const VEHICLE_PROFILES: Readonly<Record<VehicleClass, VehicleProfile>> = 
  */
 export function nextSpeed(speed: number, cruise: number, room: number, accel: number, decel: number, dt: number): number {
   if (!(room > 0)) return 0
-  return Math.max(0, Math.min(speed + accel * dt, cruise, Math.sqrt(2 * decel * room), room / dt))
+  const hardLimit = Math.min(Math.sqrt(2 * decel * room), room / dt)
+  const target = Math.min(cruise, hardLimit)
+  // Respect comfortable acceleration in both directions. A newly lower
+  // cruise target must not instantaneously change velocity; only a physical
+  // stopping constraint may demand harder emergency braking.
+  const comfortableFloor = Math.max(0, speed - decel * dt)
+  const comfortableTarget = Math.max(comfortableFloor, Math.min(speed + accel * dt, target))
+  return Math.max(0, Math.min(comfortableTarget, hardLimit))
 }
 
 export type VehicleMix = Readonly<Record<VehicleClass, number>>
@@ -306,6 +313,8 @@ export class TrafficSim {
    * the box's exit) further from the node.
    */
   private stopDistances = new Map<string, number>()
+  /** Cached shortening of the lane curve relative to centre-line distance. */
+  private cornerCutbackCache = new Map<string, number>()
   private junctionsVersion = -1
   /** Junction key -> described junction (approaches, exits, movements). */
   private junctionInfo = new Map<NodeId, Junction>()
@@ -442,10 +451,82 @@ export class TrafficSim {
   private cornerRadiusAt(inStep: RouteStep, outStep: RouteStep): number {
     const a = this.direction(inStep)
     const b = this.direction(outStep)
-    if (a.x * b.x + a.y * b.y > 1 - 1e-9) return 0
+    const dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y))
+    if (dot > 1 - 1e-9) return 0
     const lenIn = this.graph.getEdge(inStep.edge)!.length
     const lenOut = this.graph.getEdge(outStep.edge)!.length
-    return Math.min(this.geometry.cornerRadius, lenIn / 2, lenOut / 2)
+    // Sharp turns need a wider transition so opposing lane curves do not
+    // collapse into one another at the miter.
+    const miterReach = laneOffset(this.geometry) / Math.max(0.1, Math.cos(Math.acos(dot) / 2))
+    const clearance = this.geometry.vehicleWidth / 2 + this.geometry.safetyGap
+    const radius = Math.max(this.geometry.cornerRadius, miterReach + clearance)
+    return Math.min(radius, lenIn / 2, lenOut / 2)
+  }
+
+  /**
+   * The lane curve cuts inside the road-centre-line corner. Convert that
+   * shortcut into an equivalent distance reduction so following gaps remain
+   * safe while one vehicle is turning and the next is still approaching.
+   */
+  private cornerCutback(inStep: RouteStep, outStep: RouteStep): number {
+    const key = `${inStep.edge}>${inStep.from}|${outStep.edge}>${outStep.from}`
+    const cached = this.cornerCutbackCache.get(key)
+    if (cached !== undefined) return cached
+    const radius = this.cornerRadiusAt(inStep, outStep)
+    if (radius <= 0) {
+      this.cornerCutbackCache.set(key, 0)
+      return 0
+    }
+    let length = 0
+    let previous = this.corner(inStep, outStep, radius, 0).position
+    const samples = 16
+    for (let i = 1; i <= samples; i++) {
+      const point = this.corner(inStep, outStep, radius, i / samples).position
+      length += Math.hypot(point.x - previous.x, point.y - previous.y)
+      previous = point
+    }
+    const cutback = Math.max(0, 2 * radius - length)
+    this.cornerCutbackCache.set(key, cutback)
+    return cutback
+  }
+
+  /**
+   * Speed limit imposed by the next or current smooth bend. The incoming
+   * approach starts braking early enough to reach a comfortable lateral
+   * acceleration at the curve; the outgoing half keeps that limit until the
+   * vehicle has cleared it. This changes speed, never right-of-way.
+   */
+  private cornerSpeedLimit(v: MutableVehicle, profile: VehicleProfile): number {
+    const step = v.steps[v.stepIndex]!
+    const length = this.graph.getEdge(step.edge)!.length
+    let limit = Infinity
+
+    const next = v.steps[v.stepIndex + 1]
+    if (next) {
+      const radius = this.cornerRadiusAt(step, next)
+      if (radius > 0) {
+        const distanceToCurve = Math.max(0, length - radius - v.progress)
+        const a = this.direction(step)
+        const b = this.direction(next)
+        const turn = Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y)))
+        const effectiveRadius = radius / Math.max(0.25, Math.tan(turn / 2))
+        const curveSpeed = Math.sqrt(7 * effectiveRadius) * profile.speedFactor
+        limit = Math.min(limit, Math.sqrt(curveSpeed * curveSpeed + 2 * profile.decel * distanceToCurve))
+      }
+    }
+
+    const previous = v.stepIndex > 0 ? v.steps[v.stepIndex - 1] : undefined
+    if (previous) {
+      const radius = this.cornerRadiusAt(previous, step)
+      if (radius > 0 && v.progress < radius) {
+        const a = this.direction(previous)
+        const b = this.direction(step)
+        const turn = Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y)))
+        const effectiveRadius = radius / Math.max(0.25, Math.tan(turn / 2))
+        limit = Math.min(limit, Math.sqrt(7 * effectiveRadius) * profile.speedFactor)
+      }
+    }
+    return limit
   }
 
   /** Point on the turning curve at parameter tau in [0, 1]. */
@@ -763,6 +844,9 @@ export class TrafficSim {
 
     // 1. Movement within lanes, front to back.
     const atEnd: MutableVehicle[] = []
+    // Preserve the commanded speed across a successful edge transition.
+    // Truncating the last movement to the edge boundary is not braking.
+    const transitionSpeeds = new Map<number, number>()
     for (const lane of this.lanes.values()) {
       let limit = Infinity
       let leader: MutableVehicle | undefined
@@ -777,9 +861,11 @@ export class TrafficSim {
         // end of its edge when it cannot enter the next lane).
         const profile = VEHICLE_PROFILES[v.kind]
         const room = Math.min(edge.length + (leader === undefined ? this.roomBeyondEdge(v, limit, edge.length) : 0), limit) - v.progress
-        const speed = nextSpeed(v.speed, edge.speedLimit * profile.speedFactor, room, profile.accel, profile.decel, dt)
+        const cruise = Math.min(edge.speedLimit * profile.speedFactor, this.cornerSpeedLimit(v, profile))
+        const speed = nextSpeed(v.speed, cruise, room, profile.accel, profile.decel, dt)
         const target = Math.min(edge.length, limit, v.progress + speed * dt)
         const moved = Math.max(0, target - v.progress)
+        if (target >= edge.length - 1e-9) transitionSpeeds.set(v.id, speed)
         v.progress += moved
         v.speed = moved / dt
         v.state = moved > 1e-9 ? 'moving' : v.state === 'stuck' ? 'stuck' : 'waiting'
@@ -794,6 +880,12 @@ export class TrafficSim {
     for (const v of atEnd) {
       const result = this.advanceAtJunction(v)
       if (result === 'exited') exited++
+      else if (result === 'moved') {
+        v.speed = transitionSpeeds.get(v.id) ?? v.speed
+      } else {
+        // The next edge was not available, so the vehicle really did stop.
+        v.speed = 0
+      }
     }
 
     // 3. Spawning.
@@ -931,7 +1023,7 @@ export class TrafficSim {
 
   /**
    * Re-plans from the end of the current road if the graph changed since the
-   * route was made. Called at the junction, and before claiming a junction
+   * route was made. Called at every road node, and before claiming a junction
    * box so the box is claimed for the route actually driven.
    */
   private replanIfStale(v: MutableVehicle): void {
@@ -1042,6 +1134,7 @@ export class TrafficSim {
   private refreshJunctions(): void {
     if (this.junctionsVersion === this.graph.version) return
     this.junctionsVersion = this.graph.version
+    this.cornerCutbackCache.clear()
     const degree = (n: NodeId) => this.graph.edgesAt(n).length
     const parent = new Map<NodeId, NodeId>()
     const find = (n: NodeId): NodeId => {
@@ -1078,11 +1171,11 @@ export class TrafficSim {
       sharpest.set(n.id, nodeMin)
     }
     this.stopDistances = stops
-    // Junctions: 3+ roads, a tunnel that 2+ roads merge into, or a bend
-    // sharper than a right angle (its two road surfaces overlap).
+    // Only actual intersections and multi-road tunnel mouths reserve a
+    // junction box. A degree-2 bend has no crossing traffic: treating it as
+    // a junction creates an artificial stop in an otherwise continuous road.
     const portals = new Set(this.portals)
-    const isJunction = (n: NodeId) =>
-      degree(n) >= 3 || (degree(n) >= 2 && (portals.has(n) || sharpest.get(n)! < Math.PI / 2 - 1e-6))
+    const isJunction = (n: NodeId) => degree(n) >= 3 || (degree(n) >= 2 && portals.has(n))
     const intersections = this.graph
       .nodes()
       .filter((n) => isJunction(n.id))
@@ -1188,6 +1281,8 @@ export class TrafficSim {
     let dist = 0
     for (let k = fromIndex; k < v.steps.length && dist < cap; k++) {
       const step = v.steps[k]!
+      const previous = v.steps[k - 1]
+      if (previous) dist -= this.cornerCutback(previous, step)
       const lane = this.lanes.get(laneKey(step))
       const rear = lane?.[lane.length - 1]
       if (rear && rear !== v) return dist + rear.progress - this.followingGap(v, rear)
@@ -1336,9 +1431,9 @@ export class TrafficSim {
         v.holding = key
         this.arrivals.delete(v.id)
         {
-        const clearSec = this.clearSecFor(key)
-        if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
-      }
+          const clearSec = this.clearSecFor(key)
+          if (clearSec > 0) this.junctionFreeAt.set(key, this.time + clearSec)
+        }
         continue
       }
       if (!this.remainingValid(v)) continue
