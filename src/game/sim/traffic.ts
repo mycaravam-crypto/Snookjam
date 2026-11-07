@@ -693,31 +693,29 @@ export class TrafficSim {
   }
 
   /**
-   * Final footprint-level guard for movements inside a junction box.
-   * Lane following protects vehicles on the same lane; this also protects
-   * crossing and turning paths on different approaches.
+   * Prevent physical vehicle overlap everywhere, including sharp bends and
+   * player-created junctions. This uses body dimensions (not the extra
+   * planning safety margin), because the latter can stop traffic too early
+   * and turn a safe close pass into artificial gridlock.
    */
-  private wouldCollideInJunction(v: MutableVehicle, progress: number): boolean {
-    const step = v.steps[v.stepIndex]!
-    const key = this.junctionKeys.get(step.to) ?? this.junctionKeys.get(step.from)
-    if (key === undefined) return false
-    const proposed = this.footprintAt(v, v.stepIndex, progress)
-    const current = this.footprintAt(v, v.stepIndex, v.progress)
+  private wouldCollide(v: MutableVehicle, progress: number): boolean {
+    const proposed = this.footprintAt(v, v.stepIndex, progress, 0)
+    const current = this.footprintAt(v, v.stepIndex, v.progress, 0)
     for (const other of this.fleet.values()) {
       if (other === v) continue
-      const otherStep = other.steps[other.stepIndex]!
-      if (this.junctionKeys.get(otherStep.from) !== key && this.junctionKeys.get(otherStep.to) !== key) continue
-      const occupied = this.footprintAt(other, other.stepIndex, other.progress)
+      const occupied = this.footprintAt(other, other.stepIndex, other.progress, 0)
+      // Existing overlaps can be caused by a road being added around moving
+      // traffic. Let those vehicles move apart; never create a new overlap.
       if (rectanglesOverlap(proposed, occupied) && !rectanglesOverlap(current, occupied)) return true
     }
     return false
   }
 
-  private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
+private footprintAt(v: MutableVehicle, stepIndex: number, progress: number, safetyMargin = this.geometry.safetyGap / 2): Corner[] {
     const { position: p, heading: h } = this.lanePositionOf({ ...v, stepIndex, progress })
     const profile = VEHICLE_PROFILES[v.kind]
-    const L = profile.length / 2 + this.geometry.safetyGap / 2
-    const W = profile.width / 2 + this.geometry.safetyGap / 2
+    const L = profile.length / 2 + safetyMargin
+    const W = profile.width / 2 + safetyMargin
     const c = Math.cos(h)
     const sn = Math.sin(h)
     return [
@@ -807,7 +805,7 @@ export class TrafficSim {
         let target = Math.min(edge.length, limit, v.progress + speed * dt)
         // Longitudinal lane gaps do not protect the swept footprint of a
         // turning vehicle. Enforce a final collision check inside junctions.
-        if (target > v.progress && this.wouldCollideInJunction(v, target)) target = v.progress
+        if (target > v.progress && this.wouldCollide(v, target)) target = v.progress
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
         v.speed = moved / dt
