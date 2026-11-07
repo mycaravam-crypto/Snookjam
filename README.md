@@ -278,8 +278,8 @@ Congestion (0–100 %) changes every step by `rise − fall`:
   ends the run.
 
 Levels last 180 s. The spawn interval starts at 2.2 s, ramps down to 60 %
-of that within a level, starts 25 % lower each level, and never drops below
-0.8 s. Each level starts with 16 vehicles and adds 4 to that starting fleet.
+of that within a level, starts 15 % lower each level, and never drops below
+0.8 s. Each level starts with 16 vehicles and adds 2 to that starting fleet.
 Active fleet targets rise from 80 on level 1 to 400 from level 6 onward.
 All values are in `DEFAULT_BALANCE` (src/game/session/balance.ts). The
 traffic-density tuning is deliberately separate from congestion: a large
