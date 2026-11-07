@@ -15,7 +15,7 @@ describe('start screen modes', () => {
     await w.find('[data-testid="play"]').trigger('click')
     await w.find('[data-testid="play-objectives"]').trigger('click')
     await w.find('[data-testid="play-sandbox"]').trigger('click')
-    expect(w.emitted('play')).toEqual([['classic'], ['objectives'], ['sandbox']])
+    expect(w.emitted('play')).toEqual([['classic', 'countryside'], ['objectives', 'countryside'], ['sandbox', 'countryside']])
   })
 })
 

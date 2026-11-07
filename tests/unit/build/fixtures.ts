@@ -13,6 +13,7 @@ export function asciiWorld(rows: string[]): World {
   const road = cells.map((c) => c === '#')
   return {
     seed: 0,
+    theme: 'countryside',
     width,
     height,
     terrain,

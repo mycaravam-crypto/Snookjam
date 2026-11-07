@@ -1,4 +1,4 @@
-import type { Terrain } from '../world/types'
+import type { Terrain, WorldTheme } from '../world/types'
 
 export const TERRAIN_COLORS: Record<Terrain, string> = {
   grass: '#8fca5c',
@@ -8,11 +8,23 @@ export const TERRAIN_COLORS: Record<Terrain, string> = {
   settlement: '#cdbb9a',
 }
 
+export const THEME_TERRAIN_COLORS: Record<WorldTheme, Record<Terrain, string>> = {
+  countryside: TERRAIN_COLORS,
+  city: {
+    grass: '#aeb8bd', field: '#d5dadd', forest: '#659b62', water: '#438fbd', settlement: '#c4c8c7',
+  },
+  desert: {
+    grass: '#d9b477', field: '#edcf8c', forest: '#8b7955', water: '#4b9bb5', settlement: '#d4b68c',
+  },
+}
+
 /** Crop colours; each field tile picks one so farmland looks patchworked. */
 export const FIELD_COLORS = ['#e3c860', '#dbbd55', '#d6d06a', '#e6bf5e'] as const
 
 /** Roof colours for houses, picked per house. */
 export const ROOF_COLORS = ['#c8553d', '#a8432f', '#6c7a89', '#8b5a3c'] as const
+export const CITY_ROOF_COLORS = ['#526b82', '#7d8991', '#b66c4d', '#536f73'] as const
+export const DESERT_ROOF_COLORS = ['#b86f45', '#d19a5c', '#9e684c', '#c4a16e'] as const
 
 /** Font stack for canvas text; matches the UI's display font, with a system fallback. */
 export const FONT_FAMILY = "Fredoka, system-ui, sans-serif"

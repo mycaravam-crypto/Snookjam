@@ -6,6 +6,7 @@ import {
   type EditResult,
   type NodeId,
   type GameMode,
+  type WorldTheme,
   type Point,
   type SessionSnapshot,
   type SessionState,
@@ -83,9 +84,10 @@ export interface GameController {
   dispose(): void
 }
 
-export function createGameController(seed: number | string, mode: GameMode = 'classic'): GameController {
+export function createGameController(seed: number | string, mode: GameMode = 'classic', theme: WorldTheme = 'countryside'): GameController {
   let currentMode = mode
-  const session = shallowRef(new GameSession({ seed, mode }))
+  let currentTheme = theme
+  const session = shallowRef(new GameSession({ seed, mode, world: { theme } }))
   const snapshot = shallowRef(session.value.snapshot())
   const construction = shallowRef(makeConstruction(session.value))
   const tool = shallowRef<Tool>('road')
@@ -249,6 +251,7 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
       unsubscribe()
       session.value = restored
       currentMode = restored.mode
+      currentTheme = restored.world.theme
       construction.value = makeConstruction(restored)
       selectedSignal.value = undefined
       selectedRoundabout.value = undefined
@@ -259,7 +262,7 @@ export function createGameController(seed: number | string, mode: GameMode = 'cl
     },
     newGame(nextSeed) {
       unsubscribe()
-      session.value = new GameSession({ seed: nextSeed, mode: currentMode })
+      session.value = new GameSession({ seed: nextSeed, mode: currentMode, world: { theme: currentTheme } })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
       selectedRoundabout.value = undefined

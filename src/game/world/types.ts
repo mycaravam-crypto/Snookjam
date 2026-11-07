@@ -6,6 +6,8 @@
  * Nothing here depends on screen pixels; see viewport.ts for conversion.
  */
 
+export type WorldTheme = 'countryside' | 'city' | 'desert'
+
 export type Terrain = 'grass' | 'field' | 'forest' | 'water' | 'settlement'
 
 export type Side = 'north' | 'east' | 'south' | 'west'
@@ -78,6 +80,7 @@ export interface WorldRoadLayout {
 }
 
 export interface World {
+  readonly theme: WorldTheme
   readonly seed: number
   readonly width: number
   readonly height: number

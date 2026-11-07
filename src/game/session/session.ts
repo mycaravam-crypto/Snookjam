@@ -234,7 +234,7 @@ export class GameSession {
       !finite(data.congestion) || data.congestion > 100 || !finite(data.levelTime) ||
       !finite(data.completedTime) || !finite(data.exitedInRun) || !finite(data.completedScore) ||
       !finite(data.coins) || !data.owned || !data.onMap) throw new TypeError('invalid save data')
-    const world = data.world
+    const world = { ...data.world, theme: data.world.theme ?? 'countryside' as const }
     const graph = RoadGraph.fromState(data.graph)
     for (const portal of world.portals) if (!graph.hasNode(portal.nodeId)) throw new TypeError('saved portal is missing from road graph')
     const session = new GameSession({

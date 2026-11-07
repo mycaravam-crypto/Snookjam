@@ -24,6 +24,18 @@ describe('world generation determinism', () => {
     expect(w.settlements).toHaveLength(3)
   })
 
+  it('generates distinct deterministic world themes', () => {
+    const city = generateWorld('theme-check', { theme: 'city' })
+    const desert = generateWorld('theme-check', { theme: 'desert' })
+    expect(city.theme).toBe('city')
+    expect(desert.theme).toBe('desert')
+    expect(city.settlements).toHaveLength(9)
+    expect(desert.settlements).toHaveLength(4)
+    expect(JSON.stringify(city)).toBe(JSON.stringify(generateWorld('theme-check', { theme: 'city' })))
+    expect(JSON.stringify(desert)).toBe(JSON.stringify(generateWorld('theme-check', { theme: 'desert' })))
+    expect(city.terrain).not.toEqual(desert.terrain)
+  })
+
   it('returns frozen data', () => {
     const w = generateWorld(9)
     expect(Object.isFrozen(w)).toBe(true)
