@@ -106,7 +106,7 @@ const canvasHash = (page: Page) =>
   })
 
 test.describe('critical player flow', () => {
-  test('1. opens Snookjam and starts a level', async ({ page }) => {
+  test('starts the game and renders moving traffic', async ({ page }) => {
     await page.goto(URL)
     await expect(page.getByRole('heading', { name: 'Snookjam' })).toBeVisible()
     await expect(page.getByRole('list', { name: 'How to play' })).toBeVisible()
@@ -121,7 +121,7 @@ test.describe('critical player flow', () => {
     await expect(page.getByTestId('hud-time')).not.toContainText('0:00 /')
   })
 
-  test('3. congestion responds to queues', async ({ page }) => {
+  test('builds and clears congestion with pause controls', async ({ page }) => {
     await play(page)
     await fastForward(page, 5) // let traffic enter the map
     expect((await state(page)).activeVehicles).toBeGreaterThan(0)
@@ -148,7 +148,7 @@ test.describe('critical player flow', () => {
     await expect(page.getByTestId('overlay')).toHaveCount(0)
   })
 
-  test('4–5. builds a road by dragging; traffic uses it after rerouting', async ({ page }) => {
+  test('builds a road and reroutes traffic', async ({ page }) => {
     await play(page)
     const before = await graphInfo(page)
     await drag(page, road.from, road.to)
@@ -168,7 +168,7 @@ test.describe('critical player flow', () => {
     expect(used).toBe(true)
   })
 
-  test('7. game over, then restart cleanly', async ({ page }) => {
+  test('recovers cleanly from gridlock', async ({ page }) => {
     await play(page)
     const initial = await graphInfo(page)
     await drag(page, road.from, road.to)
