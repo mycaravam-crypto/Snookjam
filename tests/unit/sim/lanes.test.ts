@@ -257,7 +257,7 @@ function buildAnyRoad(session: GameSession): boolean {
     for (const b of nodes) {
       const len = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y)
       if (len < 3 || len > 6) continue
-      const check = checkConnection(session.world, g, a.position, b.position)
+      const check = checkConnection(session.world, session.graph, a.position, b.position)
       if (check.ok) {
         session.connectRoad(check.from.location, check.to.location)
         return true
