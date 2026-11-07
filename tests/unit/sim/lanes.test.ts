@@ -25,6 +25,18 @@ function step(sim: TrafficSim, n: number, each?: () => void): void {
   }
 }
 
+function distanceToRoadCenterline(point: { x: number; y: number }, graph: RoadGraph): number {
+  return Math.min(...graph.edges().map((edge) => {
+    const a = graph.getNode(edge.a)!.position
+    const b = graph.getNode(edge.b)!.position
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const lengthSq = dx * dx + dy * dy
+    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq))
+    return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t))
+  }))
+}
+
 describe('two-lane road geometry', () => {
   it('fits two lanes, with a safety gap between passing vehicles', () => {
     const g = ROAD_GEOMETRY
@@ -158,6 +170,11 @@ describe('curved roads', () => {
       expect(collisions(sim)).toEqual([])
       for (const v of sim.vehicles()) {
         const { position, heading } = sim.lanePositionOf(v)
+        // The full vehicle body must remain inside the road surface, even
+        // while the lane curve rounds a freehand bend.
+        expect(distanceToRoadCenterline(position, g)).toBeLessThanOrEqual(
+          roadWidth() / 2 - ROAD_GEOMETRY.vehicleWidth / 2 + 1e-6,
+        )
         const prev = last.get(v.id)
         if (prev) {
           expect(Math.hypot(position.x - prev.x, position.y - prev.y)).toBeLessThanOrEqual(maxStep)
