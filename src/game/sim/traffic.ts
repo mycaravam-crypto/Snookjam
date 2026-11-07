@@ -633,14 +633,11 @@ export class TrafficSim {
   }
 
   /**
-   * Whether `v` would touch any other vehicle while traversing junction box
-   * `key` and clearing its exit. Check the entire approach and departure
-   * traffic, not only vehicles stranded inside the box: a turning vehicle's
-   * swept path can reach a queue before its nominal stop line, especially
-   * after a player-built sharp road changes the junction geometry.
-   *
-   * Vehicle footprints include the configured safety gap. Sampling every
-   * 0.05 tiles keeps the check conservative without depending on render rate.
+   * Whether `v`, driving from where it is through box `key` until it would
+   * release the box, would touch another vehicle stranded in that box.
+   * Footprints are each class's rectangle in its lane, grown by the safety
+   * gap; the path is sampled every 0.05 tiles. Only used while a box has
+   * stranded vehicles, which is rare.
    */
   /**
    * 0: stranded on a road inside a junction box; 1: stranded past a stop
@@ -690,11 +687,11 @@ export class TrafficSim {
     return false
   }
 
-private footprintAt(v: MutableVehicle, stepIndex: number, progress: number, safetyMargin = this.geometry.safetyGap / 2): Corner[] {
+private footprintAt(v: MutableVehicle, stepIndex: number, progress: number): Corner[] {
     const { position: p, heading: h } = this.lanePositionOf({ ...v, stepIndex, progress })
     const profile = VEHICLE_PROFILES[v.kind]
-    const L = profile.length / 2 + safetyMargin
-    const W = profile.width / 2 + safetyMargin
+    const L = profile.length / 2 + this.geometry.safetyGap / 2
+    const W = profile.width / 2 + this.geometry.safetyGap / 2
     const c = Math.cos(h)
     const sn = Math.sin(h)
     return [
