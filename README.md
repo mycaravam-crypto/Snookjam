@@ -94,6 +94,11 @@ or the app layer.
   road will attach: a square for a junction, a circle for a point along a road.
 - Releasing away from any road builds a dead end, which later roads can start
   from or connect to. Crossing an existing road creates a junction there.
+- **Traffic lights (#32):** switch the tool from **Road** to **Lights** (top
+  left of the map), then tap a junction where three or more roads meet.
+  Dashed rings mark the junctions that can take lights. The first tap adds
+  lights; tapping lit junctions selects them. The panel sets the green time
+  (5, 10 or 15 s) or removes the lights. Works with mouse and touch.
 - The drawn trajectory is resampled, smoothed to remove jitter and simplified
   into a few straight segments (`src/game/build/path.ts`). Each bend becomes a
   graph node.
@@ -124,6 +129,21 @@ lane width 0.38 tiles (road 0.76), cars 0.5 × 0.22 tiles, safety gap 0.06.
   a time, entering only when it has room to leave. Intersections too close to
   stop between them share one box, so they cannot deadlock. Tunnels where two
   or more roads meet work the same way.
+- Junctions describe their approaches, exits and movements (every approach
+  to every other road; `src/game/sim/junctions.ts`). Without lights, the box
+  goes to whoever reached the stop line first; vehicles that arrived in the
+  same step yield to traffic from their right, then go by id.
+- Traffic lights run a fixed cycle: opposite approaches share a phase, and
+  each green is followed by 1.5 s of all-red clearance (shown amber on the
+  approaches that just had green). Only a green approach may claim the box,
+  and it still needs room to leave it, so a green never sends a vehicle into
+  an occupied junction or a full exit. Each light head shows red, amber and
+  green lamps in the usual order with only the lit one bright.
+- Vehicles about to turn at a junction blink their indicators on that side.
+- A new road can put a junction box around vehicles already standing there.
+  Until they have cleared it, only they may claim it (those on roads inside
+  the box first), and each only goes once its path through the box clears
+  the others.
 
 ## World and maps
 
@@ -205,8 +225,8 @@ that within a level, starts 25 % lower each level, and never drops below
 0.8 s. Each level also adds 2 starting vehicles. All values are in
 `DEFAULT_BALANCE` (src/game/session/balance.ts). Measured over 10 seeds
 without player roads (seeds 1–10): levels 1–2 stay below about 8 %
-congestion, level 3 peaks at 4–90 % (2 of 10 seeds lost), and level 4 is
-lost on every seed.
+congestion, level 3 peaks at 5–25 % on the seeds it does not lose (2 of 10
+seeds lost), and level 4 is lost on every seed.
 
 ## Testing
 
@@ -215,9 +235,9 @@ lost on every seed.
 - **Integration tests** (`tests/integration`) run the whole game logic
   together with fixed seeds and fixed 50 ms steps, with no wall-clock timing.
   The core scenario uses seed 10, level 3. Without player roads the level is
-  lost (congestion reaches 100 % at 146 s). A single road from (38.5, 7.5) to
+  lost (congestion reaches 100 % at 170 s). A single road from (38.5, 7.5) to
   (32.5, 8.5), built 12 s in, completes the level with congestion peaking
-  around 9 %, and more vehicles leave the map. If generation, traffic rules
+  around 8 %, and more vehicles leave the map. If generation, traffic rules
   or balance change, find a new relieving road by trying every valid single
   road on a map that is lost without help.
 - **Browser tests** (`tests/e2e`) start the production build with

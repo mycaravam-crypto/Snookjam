@@ -466,6 +466,119 @@ test.describe('critical player flow', () => {
   })
 })
 
+/** Centre of the first junction on the current map that can take traffic lights. */
+const signalJunction = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window as any).__snookjam.session.value
+    const j = s.sim.junctions().find((j: any) => s.sim.isSignalJunction(j))
+    return { key: j.key as number, center: j.center as Point }
+  })
+
+const signalCount = (page: Page) => page.evaluate(() => (window as any).__snookjam.session.value.sim.signals().length as number)
+
+test.describe('traffic lights (#32)', () => {
+  test('L1. places, configures and removes lights with the mouse', async ({ page }) => {
+    await play(page)
+    await page.getByTestId('tool-signal').click()
+    await expect(page.getByTestId('tool-signal')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('build-status')).toContainText('Tap a junction')
+
+    // Tapping open country explains what to tap.
+    const away = await toScreen(page, offRoad)
+    await page.mouse.click(away.x, away.y)
+    await expect(page.getByTestId('build-status')).toContainText('No junction there')
+    expect(await signalCount(page)).toBe(0)
+
+    const junction = await signalJunction(page)
+    const at = await toScreen(page, junction.center)
+    await page.mouse.click(at.x, at.y)
+    await expect(page.getByTestId('build-status')).toContainText('Traffic lights added')
+    await expect(page.getByTestId('signal-panel')).toBeVisible()
+    expect(await signalCount(page)).toBe(1)
+
+    await page.getByTestId('signal-green-15').click()
+    await expect(page.getByTestId('signal-green-15')).toHaveAttribute('aria-pressed', 'true')
+    const green = await page.evaluate((key) => (window as any).__snookjam.session.value.sim.signalAt(key).greenSec, junction.key)
+    expect(green).toBe(15)
+
+    // Tapping the junction again selects the existing lights rather than adding more.
+    await page.mouse.click(at.x, at.y)
+    await expect(page.getByTestId('build-status')).toContainText('Editing traffic lights')
+    expect(await signalCount(page)).toBe(1)
+
+    await page.getByTestId('signal-remove').click()
+    await expect(page.getByTestId('signal-panel')).toHaveCount(0)
+    expect(await signalCount(page)).toBe(0)
+
+    // Back to roads: dragging builds again.
+    await page.getByTestId('tool-road').click()
+    await drag(page, road.from, road.to)
+    await expect(page.getByTestId('build-status')).toContainText('Road built')
+  })
+
+  test('L2. places lights with touch', async ({ page }) => {
+    await play(page)
+    await page.getByTestId('tool-signal').click()
+    const junction = await signalJunction(page)
+    const at = await toScreen(page, junction.center)
+    await page.locator('canvas.world').evaluate((el, p) => {
+      const fire = (type: string) =>
+        el.dispatchEvent(new PointerEvent(type, { clientX: p.x, clientY: p.y, pointerId: 12, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true }))
+      fire('pointerdown')
+      fire('pointerup')
+    }, at)
+    await expect(page.getByTestId('build-status')).toContainText('Traffic lights added')
+    expect(await signalCount(page)).toBe(1)
+    const scroll = await page.evaluate(() => ({ y: window.scrollY, selection: String(window.getSelection()) }))
+    expect(scroll).toEqual({ y: 0, selection: '' })
+  })
+
+  test('L3. vehicles enter only on green and queue on red', async ({ page }) => {
+    await play(page)
+    await page.getByTestId('tool-signal').click()
+    const junction = await signalJunction(page)
+    const at = await toScreen(page, junction.center)
+    await page.mouse.click(at.x, at.y)
+    await page.getByTestId('signal-green-5').click()
+    const result = await page.evaluate((key) => {
+      const s = (window as any).__snookjam.session.value
+      s.sim.queueSpawns(30)
+      let holder: number | undefined
+      const approach = new Map<number, any>()
+      let admissions = 0
+      let offGreen = 0
+      let redWaits = 0
+      const phases = new Set<string>()
+      for (let i = 0; i < 20 * 90 && s.state === 'running'; i++) {
+        s.tick()
+        s.setCongestionForTesting(0)
+        const view = s.sim.signalAt(key)
+        phases.add(`${view.phase}:${view.clearance}`)
+        const index = (step: any) => view.junction.approaches.findIndex((a: any) => a.edge === step.edge && a.node === step.to)
+        const next = s.sim.junctionHolderAt(key)
+        if (next !== undefined && next !== holder && approach.has(next)) {
+          admissions++
+          if (view.lights[index(approach.get(next))] !== 'green') offGreen++
+        }
+        holder = next
+        for (const v of s.sim.vehicles()) {
+          const step = v.steps[v.stepIndex]
+          const k = index(step)
+          if (k < 0) continue
+          approach.set(v.id, step)
+          if (view.lights[k] === 'red' && v.state === 'waiting') redWaits++
+        }
+      }
+      return { admissions, offGreen, redWaits, phases: phases.size }
+    }, junction.key)
+    expect(result.offGreen).toBe(0)
+    expect(result.admissions).toBeGreaterThan(3)
+    expect(result.redWaits).toBeGreaterThan(0)
+    // Every phase was green and cleared at least once.
+    expect(result.phases).toBeGreaterThanOrEqual(4)
+  })
+})
+
 /**
  * With two-lane spacing and junction boxes (#22), 40 x 30 maps hold roughly
  * 40-90 vehicles at once depending on their road network. Seed 36 has room

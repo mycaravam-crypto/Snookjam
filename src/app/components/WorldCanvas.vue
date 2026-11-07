@@ -6,6 +6,7 @@ import {
   fitViewport,
   renderConstructionPreview,
   renderHeatmap,
+  renderSignals,
   renderVehicles,
   renderWorld,
   worldToScreen,
@@ -14,6 +15,7 @@ import {
   type ConstructionFeedback,
   type ConstructionOutcome,
   type NetworkMonitor,
+  type NodeId,
   type Point,
   type TrafficSim,
   type Viewport,
@@ -32,10 +34,25 @@ const props = withDefaults(
     diagnostics?: NetworkMonitor
     /** Draw the congestion heatmap overlay. */
     heatmap?: boolean
+    /** 'road' drags build roads; 'signal' taps place or select traffic lights (#32). */
+    tool?: 'road' | 'signal'
+    /** Node of the selected traffic lights, if any. */
+    selectedSignal?: NodeId
   }>(),
-  { construction: undefined, traffic: undefined, interactive: true, diagnostics: undefined, heatmap: false },
+  {
+    construction: undefined,
+    traffic: undefined,
+    interactive: true,
+    diagnostics: undefined,
+    heatmap: false,
+    tool: 'road',
+    selectedSignal: undefined,
+  },
 )
-const emit = defineEmits<{ outcome: [ConstructionOutcome] }>()
+const emit = defineEmits<{ outcome: [ConstructionOutcome]; tap: [Point] }>()
+
+/** A tap may wander this far (CSS px) and still count as a tap. */
+const TAP_SLOP = 12
 
 const FEEDBACK_MS = 700
 /** Rotate the map only when that makes it at least this much larger. */
@@ -46,6 +63,7 @@ let viewport: Viewport | undefined
 let observer: ResizeObserver | undefined
 let frame = 0
 let activePointer: number | undefined
+let tapStart: { id: number; x: number; y: number; point: Point } | undefined
 let feedback: ConstructionFeedback | undefined
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
 let unsubscribe: (() => void) | undefined
@@ -111,7 +129,10 @@ function draw(): void {
   // Display only: the overlay reads the monitor and never touches the sim.
   if (props.heatmap && props.diagnostics) renderHeatmap(ctx, props.diagnostics.graph, props.diagnostics, viewport)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
-  if (props.traffic) renderVehicles(ctx, props.traffic, viewport)
+  if (props.traffic) {
+    renderVehicles(ctx, props.traffic, viewport)
+    renderSignals(ctx, props.traffic, viewport, { selected: props.selectedSignal, showCandidates: props.tool === 'signal' && props.interactive })
+  }
 }
 
 function scheduleDraw(): void {
@@ -127,6 +148,14 @@ function toWorld(e: Pick<PointerEvent, 'clientX' | 'clientY'>): Point | undefine
 }
 
 function onPointerDown(e: PointerEvent): void {
+  if (props.tool === 'signal') {
+    if (!props.interactive || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
+    const point = toWorld(e)
+    if (!point) return
+    e.preventDefault()
+    tapStart = { id: e.pointerId, x: e.clientX, y: e.clientY, point }
+    return
+  }
   const c = props.construction
   if (!c || !props.interactive || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
   const point = toWorld(e)
@@ -137,6 +166,10 @@ function onPointerDown(e: PointerEvent): void {
 }
 
 function onPointerMove(e: PointerEvent): void {
+  if (props.tool === 'signal') {
+    if (tapStart?.id === e.pointerId) e.preventDefault()
+    return
+  }
   const c = props.construction
   const point = toWorld(e)
   if (!c || !point) return
@@ -152,6 +185,13 @@ function onPointerMove(e: PointerEvent): void {
 }
 
 function onPointerUp(e: PointerEvent): void {
+  if (props.tool === 'signal') {
+    const start = tapStart
+    tapStart = undefined
+    if (!start || start.id !== e.pointerId) return
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_SLOP) emit('tap', start.point)
+    return
+  }
   const c = props.construction
   if (!c || activePointer !== e.pointerId) return
   activePointer = undefined
@@ -163,6 +203,7 @@ function onPointerUp(e: PointerEvent): void {
 }
 
 function onPointerCancel(e: PointerEvent): void {
+  if (tapStart?.id === e.pointerId) tapStart = undefined
   if (activePointer !== e.pointerId) return
   activePointer = undefined
   props.construction?.cancel()
@@ -217,6 +258,14 @@ watch(
   },
 )
 watch(
+  () => [props.tool, props.selectedSignal] as const,
+  () => {
+    tapStart = undefined
+    if (canvas.value) canvas.value.style.cursor = props.tool === 'signal' ? 'pointer' : 'default'
+    scheduleDraw()
+  },
+)
+watch(
   () => [props.world, props.construction] as const,
   () => {
     activePointer = undefined
@@ -232,7 +281,7 @@ watch(
     ref="canvas"
     class="world"
     role="img"
-    :aria-label="`Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
+    :aria-label="tool === 'signal' ? `Map of seed ${world.seed}. Tap a junction to add or edit traffic lights.` : `Map of seed ${world.seed}. Drag from a road and release on open terrain or another road to build.`"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"

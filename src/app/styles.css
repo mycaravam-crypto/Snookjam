@@ -476,6 +476,97 @@ kbd {
   pointer-events: none;
 }
 
+/* Build tools and traffic-light panel (#32) */
+.tools,
+.signal-panel {
+  position: absolute;
+  top: 12px;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #10190ce6;
+  border: 2px solid #ffffff26;
+  box-shadow: 0 6px 18px #00000066;
+}
+
+.tools {
+  left: 12px;
+}
+
+.tools button,
+.signal-panel button {
+  --btn-bg: var(--panel-2);
+  --btn-fg: var(--fg);
+  --btn-edge: #0a1208;
+  border: 1px solid var(--border);
+  padding: 0.35em 0.9em;
+  min-height: 40px;
+}
+
+.tools button[aria-pressed='true'],
+.signal-panel button[aria-pressed='true'] {
+  --btn-bg: var(--accent);
+  --btn-fg: var(--accent-fg);
+  --btn-edge: var(--accent-deep);
+}
+
+.signal-panel {
+  right: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 12px;
+  max-width: calc(100% - 24px);
+}
+
+.signal-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.signal-phase {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.signal-greens {
+  display: flex;
+  gap: 6px;
+}
+
+.signal-panel .signal-remove {
+  --btn-bg: #3a1a14;
+  --btn-fg: #ffd9d2;
+}
+
+.signal-panel[data-side='bottom'] {
+  top: auto;
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 52px);
+}
+
+@media (max-width: 560px) {
+  /* One compact row on phones, clear of the selected junction. */
+  .signal-panel {
+    left: 12px;
+    right: 12px;
+    top: 72px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 6px 8px;
+  }
+  .signal-panel h2 {
+    display: none;
+  }
+  .signal-phase {
+    flex-basis: 100%;
+  }
+  .signal-panel .signal-remove {
+    margin-left: auto;
+  }
+}
+
 .hud-tools {
   display: flex;
   gap: 6px;
@@ -498,8 +589,8 @@ kbd {
 /* Traffic statistics panel (#34) */
 .network {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 66px;
+  left: 12px;
   width: min(260px, calc(100% - 32px));
   max-height: calc(100% - 80px);
   overflow-y: auto;
@@ -801,6 +892,10 @@ kbd {
     order: 3;
     flex-basis: 100%;
   }
+}
+
+/* Diagnostics on narrow screens (#34) */
+@media (max-width: 560px) {
   .hud-tools {
     order: 4;
   }
@@ -809,7 +904,7 @@ kbd {
     font-size: 0.8rem;
   }
   .network {
-    top: 6px;
+    top: 70px;
     left: 6px;
     width: min(230px, calc(100% - 12px));
     padding: 6px 10px 8px;

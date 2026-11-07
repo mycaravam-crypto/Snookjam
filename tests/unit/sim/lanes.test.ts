@@ -199,8 +199,11 @@ describe('junctions', () => {
   })
 })
 
+/** Seeds 15, 18 and 20 caught vehicles stranded in a box by a new road (#32). */
+const SEEDS = Array.from({ length: 30 }, (_, i) => i + 1)
+
 describe('generated maps', () => {
-  it.each([1, 2, 3, 4, 5, 6, 7, 8])('never lets two vehicles overlap through a full level (seed %i)', (seed) => {
+  it.each(SEEDS)('never lets two vehicles overlap through a full level (seed %i)', (seed) => {
     const session = new GameSession({ seed })
     session.start()
     let built = false
@@ -214,7 +217,7 @@ describe('generated maps', () => {
 })
 
 describe('sharp player-built junctions', () => {
-  it.each([1, 2, 3, 4, 5, 6, 7, 8])('never lets two vehicles overlap (seed %i)', (seed) => {
+  it.each(SEEDS)('never lets two vehicles overlap (seed %i)', (seed) => {
     const session = new GameSession({ seed })
     session.start()
     let built = 0

@@ -23,6 +23,8 @@ const STATE_OUTLINE: Record<VehicleState, string> = {
  */
 export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport): void {
   const s = v.scale
+  // Turn indicators (#32) blink at about 1.5 Hz in simulation time.
+  const blinkOn = Math.floor(sim.stats().time * 3) % 2 === 0
   ctx.save()
   for (const vehicle of sim.vehicles()) {
     const profile = VEHICLE_PROFILES[vehicle.kind]
@@ -30,10 +32,18 @@ export function renderVehicles(ctx: VehicleContext, sim: TrafficSim, v: Viewport
     const width = s * profile.width
     const { position, heading } = sim.lanePositionOf(vehicle)
     const p = worldToScreen(v, position)
-    drawCar(ctx, vehicle, p.x, p.y, screenAngle(v, heading), length, width)
+    const intent = sim.intentOf(vehicle)
+    const indicator =
+      blinkOn && intent.junction && intent.distance <= INDICATE_WITHIN && (intent.turn === 'left' || intent.turn === 'right')
+        ? intent.turn
+        : undefined
+    drawCar(ctx, vehicle, p.x, p.y, screenAngle(v, heading), length, width, indicator)
   }
   ctx.restore()
 }
+
+/** Vehicles signal a turn this far (tiles) before a junction (#32). */
+export const INDICATE_WITHIN = 2.5
 
 /** Drop-shadow offset in screen pixels (down-right, matching the map). */
 const SHADOW = 1.5
@@ -46,6 +56,7 @@ function drawCar(
   heading: number,
   length: number,
   width: number,
+  indicator?: 'left' | 'right',
 ): void {
   const hl = length / 2
   const hw = width / 2
@@ -76,6 +87,14 @@ function drawCar(
     ctx.fillStyle = COLORS.vehicleLight
     ctx.fillRect(hl - 1, -hw, 1, lw)
     ctx.fillRect(hl - 1, hw - lw, 1, lw)
+  }
+  if (indicator) {
+    // Front and rear corner on the turning side (local +y is the driver's right).
+    const size = Math.max(1.5, width * 0.4)
+    const side = indicator === 'right' ? hw - size : -hw
+    ctx.fillStyle = COLORS.vehicleIndicator
+    ctx.fillRect(hl - size, side, size, size)
+    ctx.fillRect(-hl, side, size, size)
   }
   ctx.restore()
   if (vehicle.state === 'stuck') {
