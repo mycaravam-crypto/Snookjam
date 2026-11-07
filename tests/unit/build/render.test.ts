@@ -1,20 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import { constructionOptions, ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
 import type { ConstructionContext } from '@game/index'
+import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH } from '@game/render/roadStyle'
 import { asciiWorld, LOOP } from './fixtures'
 
 function recorder() {
   const calls: { name: string; args: unknown[] }[] = []
+  const widths: number[] = []
   const ctx = new Proxy({} as Record<string, unknown>, {
     get: (t, p: string) => (p in t ? t[p] : (...args: unknown[]) => void calls.push({ name: p, args })),
-    set: (t, p: string, v) => ((t[p] = v), true),
+    set: (t, p, v) => {
+      if (p === 'lineWidth') widths.push(v as number)
+      if (typeof p === 'string') t[p] = v
+      return true
+    },
   }) as unknown as ConstructionContext
-  return { ctx, calls }
+  return { ctx, calls, widths }
 }
 
 describe('construction rendering', () => {
   const world = asciiWorld(LOOP)
   const v = fitViewport(world.width, world.height, 600, 400)
+
+  it('uses the finished two-lane road footprint for the live preview', () => {
+    const controller = new ConstructionController(world, createRoadGraph(world))
+    controller.pointerDown({ x: 2.5, y: 1.5 })
+    controller.pointerMove({ x: 2.5, y: 5.5 })
+    const preview = recorder()
+    renderConstructionPreview(preview.ctx, controller.preview, undefined, v)
+    expect(preview.widths.slice(0, 2)).toEqual([
+      Math.max(2, v.scale * ROAD_EDGE_WIDTH),
+      Math.max(2, v.scale * ROAD_SURFACE_WIDTH),
+    ])
+  })
 
   it('draws valid previews solid and invalid previews dashed', () => {
     const options = constructionOptions({ endSnapDistance: 1.25, endSnapRelease: 1.25 })
