@@ -126,7 +126,10 @@ describe('freehand road relieves a bottleneck', () => {
     expect(built.outcome.road.points.length).toBeGreaterThan(2)
 
     expect(built.exited).toBeGreaterThan(base.exited * 1.1)
-    expect(built.backlog).toBeLessThan(base.backlog * 0.85)
+    // Queues discharge more slowly since vehicles accelerate from rest
+    // (#31), and the bypass adds two T-junctions of its own, so the backlog
+    // falls less than it did with instant starts (about 10-20 %).
+    expect(built.backlog).toBeLessThan(base.backlog * 0.95)
     // Nobody teleported when the road was committed, or got stranded later.
     expect(built.jump).toBeLessThan(1e-9)
     expect(built.sim.stats().stuck).toBe(0)

@@ -7,8 +7,11 @@
  * Model (discrete, no physics):
  * - Each edge has one lane per direction. A lane holds vehicles ordered
  *   front-first; vehicles never overtake.
- * - A vehicle moves at the edge's speed limit, but never closer than
- *   `minGap` tiles to the vehicle ahead in its lane.
+ * - A vehicle cruises at its class's share of the edge's speed limit, but
+ *   never closer than `minGap` tiles to the vehicle ahead in its lane. It
+ *   accelerates and brakes at its class's rates (#31, `nextSpeed`), never
+ *   faster than lets it stop before that hard limit, so braking spreads back
+ *   along queues while vehicles still never overlap.
  * - Roads are classic two-lane roads (#22, see lanes.ts): each direction
  *   drives in its own lane on the right, so opposing vehicles pass without
  *   touching. `lanePositionOf` gives the in-lane position; lanes are mitred
@@ -50,11 +53,39 @@ export interface RandomSource {
 export type VehicleClass = 'car' | 'van' | 'truck'
 
 /** Simulation-space vehicle profiles. Width stays inside one lane. */
-export const VEHICLE_PROFILES: Readonly<Record<VehicleClass, { readonly length: number; readonly width: number; readonly speedFactor: number }>> = Object.freeze({
-  car: Object.freeze({ length: 0.5, width: 0.22, speedFactor: 1 }),
-  van: Object.freeze({ length: 0.68, width: 0.24, speedFactor: 0.88 }),
-  truck: Object.freeze({ length: 0.9, width: 0.26, speedFactor: 0.72 }),
+export interface VehicleProfile {
+  readonly length: number
+  readonly width: number
+  /** Share of the road's speed limit this class cruises at. */
+  readonly speedFactor: number
+  /** Acceleration from rest or after slowing, in tiles/s². */
+  readonly accel: number
+  /** Comfortable braking, in tiles/s², used to slow down ahead of a stop (#31). */
+  readonly decel: number
+}
+
+/**
+ * Simulation-space vehicle profiles. Width stays inside one lane. Heavier
+ * classes accelerate and brake more gently, so they start later from a
+ * queue and begin slowing further back.
+ */
+export const VEHICLE_PROFILES: Readonly<Record<VehicleClass, VehicleProfile>> = Object.freeze({
+  car: Object.freeze({ length: 0.5, width: 0.22, speedFactor: 1, accel: 4, decel: 6 }),
+  van: Object.freeze({ length: 0.68, width: 0.24, speedFactor: 0.88, accel: 3.2, decel: 5 }),
+  truck: Object.freeze({ length: 0.9, width: 0.26, speedFactor: 0.72, accel: 2.2, decel: 4 }),
 })
+
+/**
+ * Speed for the next step (#31): accelerate toward `cruise`, but never faster
+ * than allows braking at `decel` to a stop within `room` (the distance to the
+ * hard limit ahead), and never past that limit within this step. Because
+ * the limit itself is hard, vehicles never overlap even if a leader stops
+ * more sharply than `decel`.
+ */
+export function nextSpeed(speed: number, cruise: number, room: number, accel: number, decel: number, dt: number): number {
+  if (!(room > 0)) return 0
+  return Math.max(0, Math.min(speed + accel * dt, cruise, Math.sqrt(2 * decel * room), room / dt))
+}
 
 export type VehicleMix = Readonly<Record<VehicleClass, number>>
 
@@ -380,7 +411,7 @@ export class TrafficSim {
     // 0. Junction boxes: release vehicles that have cleared them, then let
     //    waiting vehicles at stop lines in, oldest first.
     this.refreshJunctions()
-    this.updateJunctions()
+    this.updateJunctions(dt)
 
     // 1. Movement within lanes, front to back.
     const atEnd: MutableVehicle[] = []
@@ -393,7 +424,13 @@ export class TrafficSim {
         // Followers respect stop lines too: at a sharp join the stop line can
         // lie further back than the following distance behind a box holder.
         limit = leader === undefined ? this.frontLimit(v, edge.length) : Math.min(limit, this.stopLineLimit(v, edge.length), leader.progress - this.followingGap(v, leader))
-        const target = Math.min(edge.length, limit, v.progress + edge.speedLimit * VEHICLE_PROFILES[v.kind].speedFactor * dt)
+        // Smooth following (#31): the speed persists between steps and the
+        // vehicle brakes ahead of the hard limit (leader, stop line or the
+        // end of its edge when it cannot enter the next lane).
+        const profile = VEHICLE_PROFILES[v.kind]
+        const room = Math.min(edge.length + (leader === undefined ? this.roomBeyondEdge(v, limit, edge.length) : 0), limit) - v.progress
+        const speed = nextSpeed(v.speed, edge.speedLimit * profile.speedFactor, room, profile.accel, profile.decel, dt)
+        const target = Math.min(edge.length, limit, v.progress + speed * dt)
         const moved = Math.max(0, target - v.progress)
         v.progress += moved
         v.speed = moved / dt
@@ -716,6 +753,23 @@ export class TrafficSim {
     return Math.min(limit, this.stopLineLimit(v, length))
   }
 
+  /**
+   * Braking room past the end of the current edge for a lane's front
+   * vehicle: none if it cannot enter its next lane (blocked, full, or it is
+   * about to wait at a junction it has no route through), otherwise the room
+   * its look-ahead limit allows, so it keeps its speed through free nodes.
+   */
+  private roomBeyondEdge(v: MutableVehicle, limit: number, length: number): number {
+    if (v.stepIndex + 1 >= v.steps.length) return Math.max(0, limit - length)
+    if (v.state === 'stuck') return 0
+    const next = v.steps[v.stepIndex + 1]!
+    const edge = this.graph.getEdge(next.edge)
+    if (!edge || edge.blocked) return 0
+    const lane = this.lanes.get(laneKey(next))
+    if (lane && lane.length >= edge.capacity) return 0
+    return Math.max(0, limit - length)
+  }
+
   /** How far `v` may advance before the junction box ahead, unless it holds it. */
   private stopLineLimit(v: MutableVehicle, length: number): number {
     const step = v.steps[v.stepIndex]!
@@ -736,7 +790,7 @@ export class TrafficSim {
     return this.gapAhead(v, v.stepIndex + 1, mixedVehicleMinGap(this.geometry)) >= -1e-9
   }
 
-  private updateJunctions(): void {
+  private updateJunctions(dt: number): void {
     // Release: the holder is `stopDistance` past the box's last node (or gone).
     for (const [key, id] of [...this.junctionHolder]) {
       const v = this.fleet.get(id)
@@ -759,7 +813,12 @@ export class TrafficSim {
       const step = v.steps[v.stepIndex]!
       if (this.junctionKeys.get(step.to) === undefined) continue
       const edge = this.graph.getEdge(step.edge)!
-      if (this.internalEdges.has(step.edge) || v.progress >= edge.length - this.stopDistanceAt(step.edge, step.to) - 1e-6) candidates.push(v)
+      // A vehicle still approaching may claim a free box once it is within
+      // braking distance (plus one step) of the stop line, so it rolls
+      // through instead of stopping at every junction (#31).
+      const decel = VEHICLE_PROFILES[v.kind].decel
+      const approach = (v.speed * v.speed) / (2 * decel) + v.speed * dt
+      if (this.internalEdges.has(step.edge) || v.progress >= edge.length - this.stopDistanceAt(step.edge, step.to) - approach - 1e-6) candidates.push(v)
     }
     // Vehicles caught inside a box (on an internal edge, or past a stop line
     // that a new road just moved back) go first so they can clear it; then
@@ -876,7 +935,8 @@ export class TrafficSim {
       steps: [...route],
       stepIndex: 0,
       progress: 0,
-      speed: 0,
+      // Vehicles emerge from the tunnel already at cruising speed (#31).
+      speed: (this.graph.getEdge(route[0]!.edge)?.speedLimit ?? 0) * VEHICLE_PROFILES[kind].speedFactor,
       state: 'moving',
       waitTime: 0,
       waitingFor: 0,
