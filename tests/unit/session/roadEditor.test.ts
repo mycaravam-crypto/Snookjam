@@ -286,3 +286,42 @@ describe('road editing through the game session (#33)', () => {
     expect(s.canUndo).toBe(false)
   })
 })
+
+describe('road edits and traffic diagnostics (#33, #34)', () => {
+  it('keeps the congestion heatmap on live roads through builds, removals and undo', () => {
+    const s = new GameSession({ seed: 9 })
+    s.start()
+    // Build a road between two nodes so it splits nothing, then one mid-edge so it splits.
+    const g = s.graph
+    let built = 0
+    for (const a of g.nodes()) {
+      for (const b of g.nodes()) {
+        const len = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y)
+        if (built >= 2 || len < 3 || len > 6 || g.edgeBetween(a.id, b.id)) continue
+        try {
+          s.connectRoad({ kind: 'node', node: a.id }, { kind: 'node', node: b.id })
+          built++
+        } catch {
+          // not connectable
+        }
+      }
+    }
+    expect(built).toBe(2)
+    const live = () => s.diagnostics.roads().every((r) => s.graph.getEdge(r.edge) !== undefined)
+    for (let i = 0; i < 20 * 40; i++) {
+      s.tick()
+      s.setCongestionForTesting(0)
+    }
+    expect(live()).toBe(true)
+    for (const road of s.roads()) s.removeRoad(road.id)
+    expect(live()).toBe(true)
+    for (let i = 0; i < 20 * 40 && s.roads().length > 0; i++) {
+      s.tick()
+      s.setCongestionForTesting(0)
+      expect(live()).toBe(true)
+    }
+    expect(s.roads()).toHaveLength(0)
+    while (s.canUndo) s.undo()
+    expect(live()).toBe(true)
+  })
+})

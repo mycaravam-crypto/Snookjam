@@ -1,4 +1,4 @@
-import type { SessionSnapshot } from '@game/index'
+import { EMPTY_NETWORK_STATS, type SessionSnapshot } from '@game/index'
 
 export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
@@ -14,6 +14,12 @@ export function snap(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     activeVehicles: 17,
     pendingVehicles: 0,
     vehiclesExited: 40,
+    network: EMPTY_NETWORK_STATS,
+    mode: 'classic',
+    objectives: [],
+    levelScore: 0,
+    score: 400,
+    endReason: undefined,
     ...overrides,
   }
 }

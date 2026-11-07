@@ -5,6 +5,7 @@ import {
   type ConstructionTarget,
   type EditResult,
   type NodeId,
+  type GameMode,
   type Point,
   type SessionSnapshot,
   type SessionState,
@@ -60,15 +61,15 @@ export interface GameController {
   togglePause(): void
   restart(): void
   nextLevel(): void
-  /** Replaces the run with a new seed and starts it. */
+  /** Replaces the run with a new seed (same mode) and starts it. */
   newGame(seed: number | string): void
   /** Advances real time (seconds) and refreshes the snapshot. */
   frame(elapsedSec: number): void
   dispose(): void
 }
 
-export function createGameController(seed: number | string): GameController {
-  const session = shallowRef(new GameSession({ seed }))
+export function createGameController(seed: number | string, mode: GameMode = 'classic'): GameController {
+  const session = shallowRef(new GameSession({ seed, mode }))
   const snapshot = shallowRef(session.value.snapshot())
   const construction = shallowRef(makeConstruction(session.value))
   const tool = shallowRef<Tool>('road')
@@ -190,7 +191,7 @@ export function createGameController(seed: number | string): GameController {
     nextLevel: act((s) => s.nextLevel()),
     newGame(nextSeed) {
       unsubscribe()
-      session.value = new GameSession({ seed: nextSeed })
+      session.value = new GameSession({ seed: nextSeed, mode })
       construction.value = makeConstruction(session.value)
       selectedSignal.value = undefined
       selectedRoad.value = undefined

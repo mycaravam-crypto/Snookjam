@@ -6,6 +6,7 @@ import {
   fitViewport,
   renderConstructionPreview,
   renderRoadEdits,
+  renderHeatmap,
   renderSignals,
   renderVehicles,
   renderWorld,
@@ -14,6 +15,7 @@ import {
   type ConstructionController,
   type ConstructionFeedback,
   type ConstructionOutcome,
+  type NetworkMonitor,
   type NodeId,
   type PlayerRoad,
   type Point,
@@ -30,6 +32,10 @@ const props = withDefaults(
     traffic?: TrafficSim
     /** Whether pointer input may build roads. */
     interactive?: boolean
+    /** Traffic diagnostics for the congestion overlay (#34). */
+    diagnostics?: NetworkMonitor
+    /** Draw the congestion heatmap overlay. */
+    heatmap?: boolean
     /**
      * 'road' drags build roads; 'signal' taps place or select traffic lights
      * (#32); 'remove' taps select player roads (#33).
@@ -47,6 +53,8 @@ const props = withDefaults(
     construction: undefined,
     traffic: undefined,
     interactive: true,
+    diagnostics: undefined,
+    heatmap: false,
     tool: 'road',
     selectedSignal: undefined,
     roads: () => [],
@@ -130,6 +138,8 @@ function draw(): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.drawImage(background, 0, 0)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // Display only: the overlay reads the monitor and never touches the sim.
+  if (props.heatmap && props.diagnostics) renderHeatmap(ctx, props.diagnostics.graph, props.diagnostics, viewport)
   renderRoadEdits(ctx, props.roads, viewport, props.tool === 'remove' ? props.selectedRoad : undefined)
   if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
   if (props.traffic) {
@@ -250,6 +260,7 @@ onBeforeUnmount(() => {
   clearTimeout(feedbackTimer)
   if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
 })
+watch(() => props.heatmap, scheduleDraw)
 watch(
   () => props.interactive,
   (interactive) => {

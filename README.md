@@ -47,6 +47,7 @@ src/
     sim/         Traffic simulation and fixed-step clock
     session/     Congestion model, level progression and game lifecycle
     world/       World model, seeded generation, viewport (world↔screen) maths
+    diagnostics/ Read-only traffic statistics, road heat and blocked junctions
     build/       Road construction: freehand path geometry, validation and the
                  drag-to-build controller
     render/      Canvas 2D drawing through an injected context
@@ -61,6 +62,14 @@ or the app layer.
 ## Controls
 
 - **Start:** press **Play** on the title screen. The run starts immediately.
+- **Modes (#35):** **Play** is the classic game: survive each level's timer
+  below 100% congestion. **Objectives** adds goals per level (complete N
+  journeys, keep throughput up, keep the average wait down), shown with
+  progress bars under the HUD; every goal must be met when the timer runs
+  out, or the run ends. Score is 10 points per completed journey plus 50 per
+  objective met, with no hidden bonuses. **Sandbox** has no timer, no
+  objectives and no gridlock loss. Objective data, the scoring rule and the
+  balancing notes are in `src/game/session/objectives.ts`.
 - **Pause / resume:** the Pause button in the top bar, or <kbd>P</kbd> / <kbd>Esc</kbd>.
   The game also pauses when the tab is hidden. You can still build while paused.
 - **HUD:** level, time survived out of the level target, active cars, and the
@@ -70,6 +79,14 @@ or the app layer.
   the map at least 15% larger, the map is drawn rotated (world north points
   right). This is display-only: the map, seeds and rules are unchanged, and
   pointer input is converted back to world coordinates.
+- **Traffic diagnostics (#34):** **Heatmap** (or <kbd>H</kbd>) tints roads
+  by how full their queues are, from pale yellow to red. Persistent bottlenecks
+  get a dashed white border and blocked junctions a red ring with a ×.
+  **Stats** (or <kbd>I</kbd>) opens a panel with completed journeys,
+  throughput, average trip and waiting time, vehicles on the map and waiting
+  now, and counts of bottlenecks and blocked junctions. Both are display-only:
+  they never pause or change the simulation. Metric definitions are in
+  `src/game/diagnostics/network.ts`.
 - **Overlays:** Paused (resume, restart, new map, quit), Level complete
   (continue to the next level) and Gridlock (try again, new map, quit).
 - **Build a road:** press on an existing road, draw the road along any path

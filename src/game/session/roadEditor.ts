@@ -19,8 +19,17 @@
  * unchanged. Generated roads are never edited.
  */
 import { pointSegmentDistance } from '../build/path'
-import type { ConnectResult, EdgeOptions, Point, RoadGraph, RoadLocation } from '../roads'
+import type { ConnectResult, EdgeOptions, Point, RemovalResult, RoadGraph, RoadLocation } from '../roads'
 import type { TrafficSim } from '../sim'
+
+/**
+ * Applies graph changes to everything that references graph edges (the
+ * traffic sim, diagnostics). Defaults to the sim alone.
+ */
+export interface TopologyListener {
+  connected(result: ConnectResult): void
+  removed(result: RemovalResult): void
+}
 
 export type PlayerRoadState = 'open' | 'closing' | 'removed'
 
@@ -64,10 +73,20 @@ export class RoadEditor {
   private nextId = 1
   private versionCounter = 0
 
+  private readonly topology: TopologyListener
+
   constructor(
     private readonly graph: RoadGraph,
     private readonly sim: TrafficSim,
-  ) {}
+    topology?: TopologyListener,
+  ) {
+    this.topology = topology ?? {
+      connected: (result) => {
+        for (const split of result.splits) sim.applySplit(split)
+      },
+      removed: (result) => sim.applyRemoval(result),
+    }
+  }
 
   /** Changes whenever the set of drawn roads (or their state) changes. */
   get version(): number {
@@ -125,7 +144,7 @@ export class RoadEditor {
     const points = [this.graph.positionOf(from), ...via, toPoint ? to : this.graph.positionOf(to)]
     const tagged = { ...options, road: id }
     const result = toPoint ? this.graph.connectToPoint(from, to, tagged, via) : this.graph.connect(from, to, tagged, via)
-    for (const split of result.splits) this.sim.applySplit(split)
+    this.topology.connected(result)
     this.nextId++
     this.records.set(id, { id, points: points.map((p) => ({ x: p.x, y: p.y })), endsOnRoad: !toPoint, state: 'open' })
     this.versionCounter++
@@ -198,7 +217,7 @@ export class RoadEditor {
 
   private removeNow(road: MutableRoad): void {
     const result = this.graph.removeEdges(this.graph.roadEdges(road.id).map((e) => e.id))
-    this.sim.applyRemoval(result)
+    this.topology.removed(result)
     road.state = 'removed'
     this.versionCounter++
   }
@@ -220,7 +239,7 @@ export class RoadEditor {
     } catch {
       return false
     }
-    for (const split of result.splits) this.sim.applySplit(split)
+    this.topology.connected(result)
     road.state = 'open'
     this.versionCounter++
     return true

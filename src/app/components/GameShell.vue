@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type EditResult, type Point } from '@game/index'
+import { REJECTION_MESSAGES, SIGNAL_GREEN_OPTIONS, type ConstructionOutcome, type EditResult, type GameMode, type Point } from '@game/index'
 import { canBuild, createGameController, type Tool } from '../game/gameController'
 import { initialSeed, randomSeed } from '../seed'
 import GameHud from './GameHud.vue'
 import GameOverlay from './GameOverlay.vue'
+import NetworkPanel from './NetworkPanel.vue'
 import WorldCanvas from './WorldCanvas.vue'
 
+const props = withDefaults(defineProps<{ mode?: GameMode }>(), { mode: 'classic' })
 const emit = defineEmits<{ quit: [] }>()
 
-const game = createGameController(initialSeed())
+const game = createGameController(initialSeed(), props.mode)
 const { snapshot, construction, session, tool, selectedSignal, selectedRoad } = game
 const canvas = ref<InstanceType<typeof WorldCanvas> | null>(null)
 
@@ -22,7 +24,15 @@ const sim = computed(() => {
   void snapshot.value
   return session.value.sim
 })
+const diagnostics = computed(() => {
+  void snapshot.value
+  return session.value.diagnostics
+})
 const interactive = computed(() => canBuild(snapshot.value.state))
+
+// Diagnostics are display-only toggles (#34): they never pause or alter the sim.
+const heatmap = ref(false)
+const showStats = ref(false)
 
 const HINT = 'Drag from a road to another road to build a connection.'
 const SIGNAL_HINT = 'Tap a junction to add traffic lights.'
@@ -198,6 +208,10 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
     e.preventDefault()
     game.togglePause()
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'h' || e.key === 'H')) {
+    heatmap.value = !heatmap.value
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'i' || e.key === 'I')) {
+    showStats.value = !showStats.value
   }
 }
 
@@ -245,7 +259,15 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
 
 <template>
   <div class="shell" data-testid="game-shell">
-    <GameHud :snapshot="snapshot" @pause="game.pause()" @resume="game.resume()" />
+    <GameHud
+      :snapshot="snapshot"
+      :heatmap="heatmap"
+      :stats="showStats"
+      @pause="game.pause()"
+      @resume="game.resume()"
+      @toggle-heatmap="heatmap = !heatmap"
+      @toggle-stats="showStats = !showStats"
+    />
     <div class="stage">
       <WorldCanvas
         ref="canvas"
@@ -253,6 +275,8 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         :construction="construction"
         :traffic="sim"
         :interactive="interactive"
+        :diagnostics="diagnostics"
+        :heatmap="heatmap"
         :tool="tool"
         :selected-signal="selectedSignal"
         :roads="roads"
@@ -261,6 +285,7 @@ if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('test
         @outcome="onOutcome"
         @tap="onTap"
       />
+      <NetworkPanel v-if="showStats" :stats="snapshot.network" :heatmap="heatmap" @close="showStats = false" />
       <div v-if="interactive" class="tools" role="toolbar" aria-label="Build tools">
         <button
           type="button"
