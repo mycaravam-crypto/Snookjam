@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { RoadGraph, type RoadLayout } from '../../../src/game/roads'
-import { FixedStepClock, mixedVehicleGeometry, TrafficSim, vehicleFollowingGap, type RandomSource, type TrafficOptions } from '../../../src/game/sim'
+import { FixedStepClock, TrafficSim, vehicleFollowingGap, type RandomSource, type TrafficOptions } from '../../../src/game/sim'
 import { collisions } from './footprint'
 
 const DT = 1 / 20
@@ -385,14 +385,13 @@ describe('high-density traffic stress (#68)', () => {
       minSpawnIntervalSec: 0.8,
       vehicleMix: { car: 0.7, van: 0.2, truck: 0.1 },
     })
-    const geometry = mixedVehicleGeometry()
 
     for (let tick = 0; tick < 600; tick++) {
       simulation.step(DT)
       if (tick % 5 !== 0) continue
 
       expect(simulation.stats().active).toBeLessThanOrEqual(100)
-      expect(collisions(simulation, geometry), `vehicle footprint collision at tick ${tick}`).toEqual([])
+      expect(collisions(simulation), `vehicle footprint collision at tick ${tick}`).toEqual([])
 
       for (const edge of graph.edges()) {
         for (const from of [edge.a, edge.b]) {
