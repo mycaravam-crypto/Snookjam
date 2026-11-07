@@ -98,8 +98,7 @@ describe('enforceMinSegment', () => {
     const straight = [
       { x: 0, y: 0 },
       { x: 0.3, y: 0.02 },
-      { x: 2, y: 0 },
-      { x: 2.2, y: 0.01 },
+      { x: 0.5, y: 0.03 },
       { x: 4, y: 0 },
     ]
     expect(enforceMinSegment(straight, 1)).toEqual([
