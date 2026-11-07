@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { constructionOptions, ConstructionController, createRoadGraph, fitViewport, renderBuiltRoads, renderConstructionPreview } from '@game/index'
 import type { ConstructionContext } from '@game/index'
-import { ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from '@game/render/roadStyle'
+import { findRoadIntersections, findRoadJunctions, ROAD_EDGE_WIDTH, ROAD_SURFACE_WIDTH, strokeRoads } from '@game/render/roadStyle'
 import { asciiWorld, LOOP } from './fixtures'
 
 function recorder() {
@@ -72,6 +72,48 @@ describe('construction rendering', () => {
     const bend = recorder()
     strokeRoads(bend.ctx, v, [[{ x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 6 }]])
     expect(bend.calls.filter((call) => call.name === 'arc')).toHaveLength(0)
+  })
+
+  it('finds one shared footprint for T-junctions, crossings and multi-branch junctions', () => {
+    const centre = { x: 4, y: 4 }
+    expect(findRoadJunctions([
+      [{ x: 1, y: 4 }, { x: 7, y: 4 }],
+      [{ x: 4, y: 1 }, centre],
+      [centre, { x: 4, y: 7 }],
+      [centre, { x: 7, y: 7 }],
+    ])).toEqual([centre])
+  })
+
+  it('recognizes a collinear shared endpoint but ignores overlapping road stretches', () => {
+    expect(findRoadJunctions([
+      [{ x: 1, y: 2 }, { x: 4, y: 2 }],
+      [{ x: 4, y: 2 }, { x: 7, y: 2 }],
+    ])).toEqual([{ x: 4, y: 2 }])
+    expect(findRoadJunctions([
+      [{ x: 1, y: 2 }, { x: 5, y: 2 }],
+      [{ x: 3, y: 2 }, { x: 7, y: 2 }],
+    ])).toEqual([])
+  })
+
+  it('returns only candidate-to-network intersections for construction previews', () => {
+    const candidate = [{ x: 4, y: 1 }, { x: 4, y: 7 }]
+    const existing = [
+      [{ x: 1, y: 4 }, { x: 7, y: 4 }],
+      [{ x: 10, y: 1 }, { x: 10, y: 7 }],
+      [{ x: 8, y: 3 }, { x: 12, y: 3 }],
+    ]
+    expect(findRoadIntersections(candidate, existing)).toEqual([{ x: 4, y: 4 }])
+  })
+
+  it('shows a junction footprint in the live preview where it will connect to an existing road', () => {
+    const controller = new ConstructionController(world, createRoadGraph(world))
+    controller.pointerDown({ x: 2.5, y: 1.5 })
+    controller.pointerMove({ x: 2.5, y: 5.5 })
+    const preview = recorder()
+    renderConstructionPreview(preview.ctx, controller.preview, undefined, v, [
+      [{ x: 1, y: 3.5 }, { x: 4, y: 3.5 }],
+    ])
+    expect(preview.calls.filter((call) => call.name === 'arc').length).toBeGreaterThan(2)
   })
 
   it('blends shared road footprints even when lane markings are hidden', () => {

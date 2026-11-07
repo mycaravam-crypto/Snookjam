@@ -146,7 +146,14 @@ function draw(): void {
   // Display only: the overlay reads the monitor and never touches the sim.
   if (props.heatmap && props.diagnostics) renderHeatmap(ctx, props.diagnostics.graph, props.diagnostics, viewport)
   renderRoadEdits(ctx, props.roads, viewport, props.tool === 'remove' ? props.selectedRoad : undefined)
-  if (props.construction) renderConstructionPreview(ctx, props.construction.preview, feedback, viewport)
+  if (props.construction) {
+    const junctionRoads = [
+      ...props.world.roads.segments.map((segment) => segment.points),
+      ...props.world.portals.map((portal) => [{ x: portal.tile.tx + 0.5, y: portal.tile.ty + 0.5 }, portal.mouth]),
+      ...props.roads.map((road) => road.points),
+    ]
+    renderConstructionPreview(ctx, props.construction.preview, feedback, viewport, junctionRoads)
+  }
   if (props.traffic) {
     renderRoundabouts(ctx, props.traffic, viewport, {
       selected: props.selectedRoundabout,
