@@ -757,6 +757,15 @@ test('stays responsive with about 100 active vehicles', async ({ page }) => {
   // Fill the map, holding congestion at 0 so the run keeps going.
   await page.evaluate(() => {
     const s = (window as any).__snookjam.session.value
+    // Performance coverage needs the level-3 100-vehicle target. Level 1
+    // intentionally caps traffic at 40, so queueing 100 here cannot test it.
+    for (let level = 1; level < 3; level++) {
+      while (s.state === 'running') {
+        s.tick()
+        s.setCongestionForTesting(0)
+      }
+      if (s.state === 'levelComplete') s.nextLevel()
+    }
     s.sim.queueSpawns(100)
     s.sim.setSpawnInterval(0.8)
     for (let i = 0; i < 20 * 90 && s.sim.stats().active < 100; i++) {
