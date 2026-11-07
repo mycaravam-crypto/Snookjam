@@ -30,9 +30,9 @@
  *   bottlenecks. Degree-2 bends are continuous road: vehicles follow the
  *   smoothed lane curve and reduce speed for its radius, but never reserve or
  *   stop at a junction box. Dead ends also have no junction limit.
- * - Routes are re-planned only at junctions (never mid-edge), when the graph
- *   has changed since the route was planned. A vehicle with no route waits at
- *   its junction in the explicit `stuck` state until the graph changes.
+ * - Routes are re-planned at the next road node (never mid-edge) when the
+ *   graph has changed since the route was planned. A vehicle with no route
+ *   waits at that node in the explicit `stuck` state until the graph changes.
  * - Spawns are queued as "pending" and released at a portal when its entry
  *   lane has room, so blocked tunnels build up incoming pressure instead of
  *   dropping traffic.
@@ -1023,7 +1023,7 @@ export class TrafficSim {
 
   /**
    * Re-plans from the end of the current road if the graph changed since the
-   * route was made. Called at the junction, and before claiming a junction
+   * route was made. Called at every road node, and before claiming a junction
    * box so the box is claimed for the route actually driven.
    */
   private replanIfStale(v: MutableVehicle): void {
