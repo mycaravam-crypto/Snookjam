@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnection, ConstructionController, GameSession, type SessionEvent, type SessionOptions } from '../../../src/game'
+import { targetVehiclesFor } from '../../../src/game/session/balance'
 
 const DT = 1 / 20
 
@@ -13,6 +14,17 @@ function session(options: Partial<SessionOptions> = {}) {
 function ticks(s: GameSession, seconds: number): void {
   for (let i = 0; i < Math.round(seconds / DT); i++) s.tick(DT)
 }
+
+describe('traffic density progression', () => {
+  it('sets a busy starting fleet and scales targets up to 400 vehicles', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(targetVehiclesFor)).toEqual([
+      40, 70, 100, 150, 200, 250, 280, 310, 340, 370, 400,
+    ])
+    const s = new GameSession({ seed: 42 })
+    expect(s.snapshot()).toMatchObject({ activeVehicleTarget: 40, activeVehicles: 0, pendingVehicles: 8 })
+    expect(s.sim.maxVehicles).toBe(40)
+  })
+})
 
 describe('GameSession lifecycle', () => {
   it('starts in ready and only advances while running', () => {

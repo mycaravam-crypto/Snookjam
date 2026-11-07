@@ -8,7 +8,7 @@ describe('GameHud', () => {
     const w = mount(GameHud, { props: { snapshot: snap() } })
     expect(w.find('[data-testid="hud-level"]').text()).toBe('2')
     expect(w.find('[data-testid="hud-time"]').text()).toBe('1:15 / 3:00')
-    expect(w.find('[data-testid="hud-cars"]').text()).toBe('17')
+    expect(w.find('[data-testid="hud-cars"]').text()).toBe('17 / 70')
     expect(w.find('[data-testid="hud-congestion-text"]').text()).toBe('13% · Flowing')
     const meter = w.find('[role="meter"]')
     expect(meter.attributes('aria-valuenow')).toBe('13')

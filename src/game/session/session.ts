@@ -81,6 +81,8 @@ export interface SessionSnapshot {
   readonly congestion: number
   readonly congestionLevel: CongestionLevel
   readonly activeVehicles: number
+  /** Desired active fleet size for the current level. */
+  readonly activeVehicleTarget: number
   readonly pendingVehicles: number
   readonly vehiclesExited: number
   /** Traffic diagnostics for the current level (#34). */
@@ -230,6 +232,7 @@ export class GameSession {
       congestion: this.congestionValue,
       congestionLevel: congestionLevel(this.congestionValue, this.balance),
       activeVehicles: stats.active,
+      activeVehicleTarget: maxVehiclesFor(this.balance, this.levelNumber),
       pendingVehicles: stats.pendingSpawns,
       vehiclesExited: this.exitedInRun,
       network: this.current.diagnostics.stats(),
