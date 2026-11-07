@@ -213,8 +213,8 @@ random seed is used and shown in the header. "New map" picks a new one.
   units to CSS pixels and is recomputed on resize without touching the world.
 - **Terrain.** Grass, field, forest, water and settlement tiles from seeded
   value noise. Water is impassable.
-- **Settlements and portals.** Seven 3 × 3 settlements away from water; six
-  tunnel portals spread around the map edges.
+- **Settlements and portals.** Five 3 × 3 settlements away from water; four
+  tunnel portals on the map edges, one per side.
 - **Roads.** A minimum spanning tree over settlements and portals, each edge
   routed with grid A* (forest costs more, existing roads cost less so routes
   merge, water is impassable). The road tiles become `world.roads`: nodes
@@ -251,11 +251,9 @@ randomness from a seeded source.
   with no route waits in the `stuck` state until the graph changes.
 - Spawns that cannot enter yet stay pending; a spawn with no route between
   portals is dropped and counted as `unroutable`.
-- Defaults: 24 starting vehicles, with a 100-car level-one target and a
-  500-car late-game ceiling. Spawning starts at 0.24 s and ramps down to
-  0.144 s in level one (never below 0.08 s). The generated map has seven
-  settlements and six tunnel portals to provide more road capacity and
-  competing routes.
+- Defaults: 16 starting vehicles, with an 80-car level-one target and a
+  400-car late-game ceiling. Spawning starts at 1.2 s and ramps down to
+  0.72 s in level one (never below 0.3 s).
 - Intersections (three or more roads meeting) let one vehicle through every
   `junctionClearSec` (1.8 s by default), so busy junctions become the
   bottlenecks that new roads relieve. Bends are not limited.
@@ -279,10 +277,10 @@ Congestion (0–100 %) changes every step by `rise − fall`:
 - No rise during the first `levelStartGraceSec` of a level. Reaching 100 %
   ends the run.
 
-Levels last 180 s. The spawn interval starts at 0.24 s, ramps down to 60 %
-of that within a level, starts 15 % lower each level, and never drops below
-0.08 s. Each level starts with 24 vehicles and adds 8 to that starting fleet.
-Active fleet targets rise from 100 on level 1 to 500 from level 6 onward.
+Levels last 180 s. The spawn interval starts at 1.2 s, ramps down to 60 %
+of that within a level, starts 20 % lower each level, and never drops below
+0.3 s. Each level starts with 16 vehicles and adds 4 to that starting fleet.
+Active fleet targets rise from 80 on level 1 to 400 from level 6 onward.
 All values are in `DEFAULT_BALANCE` (src/game/session/balance.ts). The
 traffic-density tuning is deliberately separate from congestion: a large
 moving fleet does not raise congestion unless vehicles actually wait or
