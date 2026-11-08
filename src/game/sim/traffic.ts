@@ -1148,6 +1148,7 @@ export class TrafficSim {
     const claimed = v.steps
     this.replanIfStale(v)
     this.replanForCongestion(v, node)
+    this.replanFromDeadlock(v, node)
     if (v.holding !== undefined && this.sweepHitsStranded(v, v.holding)) {
       const replanned = v.steps
       v.steps = claimed
@@ -1220,6 +1221,64 @@ export class TrafficSim {
     } else {
       v.routeVersion = this.graph.version
     }
+  }
+
+  /**
+   * Break a circular wait only after it has persisted long enough to be
+   * distinguishable from a normal queue. A dependency follows the front
+   * vehicle of a full next lane; if that vehicle is itself waiting on a full
+   * lane and the chain loops, the current vehicle may take a free alternative
+   * exit. Normal junction admission and collision checks remain authoritative.
+   */
+  private replanFromDeadlock(v: MutableVehicle, node: NodeId): void {
+    const timeout = 8
+    if (v.waitingFor < timeout || v.stepIndex + 1 >= v.steps.length) return
+
+    const blockerOf = (vehicle: MutableVehicle): MutableVehicle | undefined => {
+      if (vehicle.waitingFor < timeout || vehicle.stepIndex + 1 >= vehicle.steps.length) return undefined
+      const next = vehicle.steps[vehicle.stepIndex + 1]!
+      const edge = this.graph.getEdge(next.edge)
+      if (!edge || this.closedTo(vehicle, edge)) return undefined
+      const lane = this.lanes.get(laneKey(next))
+      if (!lane || lane.length < edge.capacity) return undefined
+      const blocker = lane[0]
+      return blocker && blocker !== vehicle && blocker.waitingFor >= timeout ? blocker : undefined
+    }
+
+    const visited = new Set<number>([v.id])
+    let cursor: MutableVehicle | undefined = blockerOf(v)
+    let cycle = false
+    for (let i = 0; cursor && i < this.fleet.size; i++) {
+      if (visited.has(cursor.id)) {
+        cycle = true
+        break
+      }
+      visited.add(cursor.id)
+      cursor = blockerOf(cursor)
+    }
+    if (!cycle) return
+
+    // Full lanes are temporarily excluded. If a later edge fills before the
+    // vehicle reaches it, the same check runs again at that junction.
+    const alternative = findRoute(this.graph, node, v.destination, {
+      cost: (edge) => {
+        const a = this.lanes.get(`${edge.id}>${edge.a}`)?.length ?? 0
+        const b = this.lanes.get(`${edge.id}>${edge.b}`)?.length ?? 0
+        if (a >= edge.capacity && b >= edge.capacity) return Infinity
+        const occupancy = Math.min(1, (a + b) / Math.max(1, edge.capacity * 2))
+        return this.graph.travelTime(edge) * (1 + 4 * occupancy * occupancy)
+      },
+    })
+    if (!alternative.ok || alternative.route.steps.length === 0) return
+    if (alternative.route.steps[0]!.edge === v.steps[v.stepIndex + 1]!.edge) return
+
+    const previous = v.steps
+    v.steps = [...v.steps.slice(0, v.stepIndex + 1), ...alternative.route.steps]
+    if (!this.hasRoomAhead(v)) {
+      v.steps = previous
+      return
+    }
+    v.routeVersion = this.graph.version
   }
 
   /**
