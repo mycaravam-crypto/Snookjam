@@ -169,8 +169,8 @@ export function checkConnection(
  * Validates a freehand road (#18). `samples` is the captured pointer
  * trajectory between `start` and `end`; it is smoothed and simplified into a
  * polyline whose ends are snapped to the network. Every segment is checked
- * against terrain and existing roads, bends must keep `clearance` from other
- * roads, and the road may not cross itself. Never mutates the graph.
+ * against terrain and existing roads, non-joining roads must keep their
+ * clearance, and the road may not cross itself. Never mutates the graph.
  *
  * `endLatch` is where the end snapped on the previous preview of the same
  * gesture: while the pointer stays within `endSnapRelease` of that road, the
@@ -249,8 +249,8 @@ export function checkSelfCrossing(path: readonly Point[]): 'self-crossing' | und
 /**
  * Checks each segment of `path` against the existing network. The first
  * segment may meet the roads at `from`, the last those at `to`; no segment may
- * otherwise cross a road, and interior bends must keep `clearance` from all
- * roads.
+ * otherwise overlap a road. Clearance from non-joining roads is checked
+ * separately by `checkRoadSpacing`.
  */
 export function checkPathCrossings(
   graph: RoadGraph,
