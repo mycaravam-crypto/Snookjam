@@ -209,7 +209,7 @@ export function checkPath(
   const selfCrossing = checkSelfCrossing(path)
   if (selfCrossing) return fail(selfCrossing)
 
-  const roads = checkPathCrossings(graph, from.location, to?.location, path, options.clearance)
+  const roads = checkPathCrossings(graph, from.location, to?.location, path)
   if (roads) return fail(roads)
 
   const spacing = checkRoadSpacing(graph, from.location, to?.location, path, options)
@@ -257,8 +257,7 @@ export function checkPathCrossings(
   from: RoadLocation,
   to: RoadLocation | undefined,
   path: readonly Point[],
-  clearance: number,
-): 'crosses-road' | 'duplicate' | 'too-close' | undefined {
+): 'crosses-road' | 'duplicate' | undefined {
   const last = path.length - 1
   if (path.length === 2 && to) return checkRoadCrossings(graph, from, to, path[0]!, path[1]!)
   for (let i = 1; i <= last; i++) {
@@ -279,14 +278,10 @@ export function checkPathCrossings(
       if (overlaps(a, b, p, q)) return 'duplicate'
     }
   }
-  for (let i = 1; i < last; i++) {
-    const bend = path[i]!
-    for (const edge of graph.edges()) {
-      const p = graph.getNode(edge.a)!.position
-      const q = graph.getNode(edge.b)!.position
-      if (pointSegmentDistance(bend, p, q) < clearance) return 'too-close'
-    }
-  }
+  // Clearance is deliberately handled by checkRoadSpacing(), which knows
+  // which edges are being joined and allows the path to leave/enter those
+  // roads naturally. Rechecking every bend against every edge here rejects
+  // valid curves immediately beside their own junctions.
   return undefined
 }
 
