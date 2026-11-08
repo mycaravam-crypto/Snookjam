@@ -1147,6 +1147,7 @@ export class TrafficSim {
     // decide who moves first.
     const claimed = v.steps
     this.replanIfStale(v)
+    this.replanForCongestion(v, node)
     if (v.holding !== undefined && this.sweepHitsStranded(v, v.holding)) {
       const replanned = v.steps
       v.steps = claimed
@@ -1219,6 +1220,40 @@ export class TrafficSim {
     } else {
       v.routeVersion = this.graph.version
     }
+  }
+
+  /**
+   * Reconsider a route after a sustained stop at a junction. Free-flow routing
+   * alone keeps sending vehicles into full lanes even when a useful bypass
+   * exists. Congestion is a soft cost, not a hard block, so short queues do
+   * not cause needless detours.
+   */
+  private replanForCongestion(v: MutableVehicle, node: NodeId): void {
+    if (v.waitingFor < 4 || v.holding !== undefined || v.stepIndex + 1 >= v.steps.length) return
+
+    const congestionCost = (edge: RoadEdge): number => {
+      const forward = this.lanes.get(`${edge.id}>${edge.a}`)?.length ?? 0
+      const reverse = this.lanes.get(`${edge.id}>${edge.b}`)?.length ?? 0
+      const occupancy = Math.min(1, (forward + reverse) / Math.max(1, edge.capacity * 2))
+      // Congestion is a soft cost: short queues should not cause needless detours.
+      return this.graph.travelTime(edge) * (1 + 4 * occupancy * occupancy)
+    }
+    const currentCost = v.steps.slice(v.stepIndex + 1).reduce((total, step) => {
+      const edge = this.graph.getEdge(step.edge)
+      return total + (edge ? congestionCost(edge) : Infinity)
+    }, 0)
+    if (!Number.isFinite(currentCost)) return
+
+    const alternative = findRoute(this.graph, node, v.destination, {
+      cost: (edge) => congestionCost(edge),
+    })
+    if (!alternative.ok || alternative.route.steps.length === 0) return
+    const sameRoute = alternative.route.steps.length === v.steps.length - v.stepIndex - 1 &&
+      alternative.route.steps.every((step, i) => step.edge === v.steps[v.stepIndex + 1 + i]?.edge && step.from === v.steps[v.stepIndex + 1 + i]?.from)
+    if (sameRoute || alternative.route.cost >= currentCost * 0.8) return
+
+    v.steps = [...v.steps.slice(0, v.stepIndex + 1), ...alternative.route.steps]
+    v.routeVersion = this.graph.version
   }
 
   /**
