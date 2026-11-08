@@ -1231,22 +1231,21 @@ export class TrafficSim {
   private replanForCongestion(v: MutableVehicle, node: NodeId): void {
     if (v.waitingFor < 4 || v.holding !== undefined || v.stepIndex + 1 >= v.steps.length) return
 
-    const congestionCost = (edge: RoadEdge, from: NodeId): number => {
-      const lane = this.lanes.get(laneKey({ edge: edge.id, from, to: this.graph.otherEnd(edge, from) }))
-      const occupancy = Math.min(1, (lane?.length ?? 0) / Math.max(1, edge.capacity))
-      // Keep the free-flow route attractive until a lane is meaningfully busy.
+    const congestionCost = (edge: RoadEdge): number => {
+      const forward = this.lanes.get(`${edge.id}>${edge.a}`)?.length ?? 0
+      const reverse = this.lanes.get(`${edge.id}>${edge.b}`)?.length ?? 0
+      const occupancy = Math.min(1, (forward + reverse) / Math.max(1, edge.capacity * 2))
+      // Congestion is a soft cost: short queues should not cause needless detours.
       return this.graph.travelTime(edge) * (1 + 4 * occupancy * occupancy)
     }
     const currentCost = v.steps.slice(v.stepIndex + 1).reduce((total, step) => {
       const edge = this.graph.getEdge(step.edge)
-      return total + (edge ? congestionCost(edge, step.from) : Infinity)
+      return total + (edge ? congestionCost(edge) : Infinity)
     }, 0)
     if (!Number.isFinite(currentCost)) return
 
     const alternative = findRoute(this.graph, node, v.destination, {
-      cost: (edge, graph) => congestionCost(edge, node === edge.a || node === edge.b
-        ? (graph.otherEnd(edge, node) === edge.a ? edge.b : edge.a)
-        : edge.a),
+      cost: (edge) => congestionCost(edge),
     })
     if (!alternative.ok || alternative.route.steps.length === 0) return
     const sameRoute = alternative.route.steps.length === v.steps.length - v.stepIndex - 1 &&
