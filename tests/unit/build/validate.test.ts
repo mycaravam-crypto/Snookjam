@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkConnection, constructionOptions, checkTerrain, createRoadGraph, findRoute, segmentsIntersect } from '@game/index'
+import { checkConnection, checkPath, constructionOptions, checkTerrain, createRoadGraph, findRoute, segmentsIntersect } from '@game/index'
 import { asciiWorld, BOTTOM_LEFT, LOOP, TOP_LEFT } from './fixtures'
 
 function setup() {
@@ -143,6 +143,25 @@ describe('checkConnection', () => {
     const after = findRoute(graph, TOP_LEFT, BOTTOM_LEFT)
     expect(after.ok).toBe(true)
     if (after.ok) expect(after.route.cost).toBeLessThan(before.route.cost)
+  })
+})
+
+describe('freehand path clearance', () => {
+  it('allows bends close to the roads intentionally joined at both endpoints', () => {
+    const { world, graph } = setup()
+    const check = checkPath(
+      world,
+      graph,
+      { x: 2.5, y: 1.5 },
+      { x: 2.5, y: 5.5 },
+      [
+        { x: 2.7, y: 2.1 },
+        { x: 3.5, y: 2.8 },
+        { x: 3.5, y: 4.2 },
+        { x: 2.7, y: 4.9 },
+      ],
+    )
+    expect(check.ok).toBe(true)
   })
 })
 
